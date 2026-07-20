@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>StepViz — Race conditions and mutex locks</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    max-width: 680px;
+    margin: 32px auto;
+    padding: 0 16px;
+    color: #222;
+    background: #fff;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  p.sub { color: #666; font-size: 14px; margin-top: 0; margin-bottom: 16px; }
+
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tab-btn {
+    flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 8px;
+    background: #f7f7f7; cursor: pointer; font-size: 14px; font-weight: 500; color: #333;
+  }
+  .tab-btn.active { background: #2b6cb0; color: #fff; border-color: #2b6cb0; }
+
+  /* Legend pill */
+  .legend {
+    display: flex; gap: 22px; margin-bottom: 16px; font-size: 13px; color: #444;
+    background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px 18px;
+  }
+  .legend .dot { width: 9px; height: 9px; border-radius: 3px; display: inline-block; margin-right: 7px; vertical-align: middle; }
+  .legend .read { background: #2b6cb0; }
+  .legend .compute { background: #718096; }
+  .legend .write { background: #c53030; }
+  .legend .lock { background: #b7791f; }
+
+  /* Card-based scene (race panel) */
+  .section-label {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; font-weight: 600;
+    letter-spacing: .06em; color: #9aa1ad; text-transform: uppercase; margin: 4px 0 8px;
+  }
+  .output-panel {
+    background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 14px;
+    padding: 20px; margin-bottom: 18px; text-align: center; transition: border-color .2s ease, background .2s ease;
+  }
+  .output-panel.type-write { border-color: #c53030; background: #fff7f7; }
+  .output-panel.type-read { border-color: #2b6cb0; background: #f3f8ff; }
+
+  .scene {
+    background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 14px;
+    padding: 22px; margin-bottom: 6px; position: relative;
+  }
+  .scene-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 100px; align-items: start; position: relative; z-index: 2; }
+
+  .process-card {
+    background: #fff; border: 1px solid #e2e5ea; border-radius: 10px; padding: 16px 18px;
+    transition: box-shadow .15s ease, border-color .15s ease;
+  }
+  .process-card.active { border-color: #2b6cb0; box-shadow: 0 0 0 1px #2b6cb0 inset; }
+  .process-title {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; font-weight: 600;
+    letter-spacing: .04em; color: #8a93a3; text-transform: uppercase; margin-bottom: 12px;
+  }
+  .field-row {
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; padding: 5px 0;
+  }
+  .field-key { color: #6b7280; }
+  .field-val { font-weight: 600; }
+  .field-val.num { color: #0969da; }
+  .field-val.empty { color: #c3c8d1; font-weight: 400; }
+  .op-badge {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; font-weight: 600;
+    padding: 2px 8px; border-radius: 5px; color: #fff;
+  }
+  .op-badge.read { background: #2b6cb0; }
+  .op-badge.compute { background: #718096; }
+  .op-badge.write { background: #c53030; }
+
+  .shared-title {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 10px; font-weight: 600;
+    letter-spacing: .04em; color: #8a93a3; text-transform: uppercase; margin-bottom: 6px;
+  }
+  .shared-value { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 30px; font-weight: 700; color: #1a1a1a; }
+  .shared-sub { font-size: 11px; color: #aab0bb; margin-top: 6px; }
+
+  svg.scene-connectors { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; overflow: visible; }
+  svg.scene-connectors path { fill: none; stroke-width: 2; stroke-dasharray: 5 4; opacity: 0; transition: opacity .2s ease; }
+  svg.scene-connectors path.visible { opacity: 1; }
+  svg.scene-connectors text {
+    font-size: 11px; opacity: 0; transition: opacity .2s ease;
+    paint-order: stroke fill; stroke: #f7f8fa; stroke-width: 5px; stroke-linejoin: round;
+  }
+  svg.scene-connectors text.visible { opacity: 1; }
+
+  .top-row { display: flex; justify-content: center; gap: 32px; margin-bottom: 20px; }
+  .top-stat { text-align: center; }
+  .top-stat .label { font-size: 13px; color: #666; margin-bottom: 4px; }
+  .top-stat .val { font-size: 28px; font-weight: 600; }
+
+  .board { position: relative; margin-bottom: 6px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 160px; margin-bottom: 6px; position: relative; z-index: 2; }
+  .col-title { text-align: center; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px; }
+
+  .step-box {
+    border: 1px solid #ddd; border-left: 5px solid #ddd; border-radius: 8px; padding: 10px 12px;
+    margin-bottom: 8px; font-size: 13px; background: #fafafa; transition: all .15s ease;
+  }
+  .step-box.type-read { border-left-color: #2b6cb0; }
+  .step-box.type-compute { border-left-color: #718096; }
+  .step-box.type-write { border-left-color: #c53030; }
+  .step-box.type-lock { border-left-color: #b7791f; }
+
+  .step-box.active { border-color: #2b6cb0; background: #ebf4ff; box-shadow: 0 0 0 1px #2b6cb0 inset; }
+  .step-box.active.type-write { border-color: #c53030; background: #fff5f5; box-shadow: 0 0 0 1px #c53030 inset; }
+  .step-box.blocked { border-color: #c53030; background: #fff5f5; }
+
+  svg.connectors { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; overflow: visible; }
+  svg.connectors path { fill: none; stroke-width: 2; stroke-dasharray: 5 4; opacity: 0; transition: opacity .2s ease; }
+  svg.connectors path.visible { opacity: 1; }
+  svg.connectors text {
+    font-size: 11px; opacity: 0; transition: opacity .2s ease;
+    paint-order: stroke fill; stroke: #fff; stroke-width: 4px; stroke-linejoin: round;
+  }
+  svg.connectors text.visible { opacity: 1; }
+
+  #caption {
+    font-size: 14px; color: #444; min-height: 24px; margin-bottom: 16px; line-height: 1.5;
+    margin-top: 10px; display: flex; align-items: center; gap: 6px;
+  }
+  .info-wrap { position: relative; display: inline-flex; }
+  .info-btn {
+    width: 17px; height: 17px; border-radius: 50%; border: 1px solid #bbb;
+    background: #f2f2f2; color: #666; font-size: 11px; font-weight: 600;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: help; padding: 0; line-height: 1;
+  }
+  .info-tip {
+    visibility: hidden; opacity: 0; position: absolute; bottom: 140%; left: 50%;
+    transform: translateX(-50%); background: #2d3748; color: #fff; padding: 8px 10px;
+    border-radius: 6px; font-size: 12px; line-height: 1.4; width: 260px;
+    transition: opacity .15s ease; z-index: 20; pointer-events: none;
+  }
+  .info-tip::after {
+    content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+    border: 5px solid transparent; border-top-color: #2d3748;
+  }
+  .info-wrap:hover .info-tip, .info-btn:focus + .info-tip { visibility: visible; opacity: 1; }
+  .controls { display: flex; align-items: center; gap: 10px; }
+  button.nav {
+    padding: 8px 16px; border: 1px solid #bbb; border-radius: 6px;
+    background: #fff; cursor: pointer; font-size: 14px;
+  }
+  button.nav:disabled { opacity: 0.4; cursor: default; }
+  .dots { display: flex; gap: 6px; margin-left: 8px; }
+  .dot-step { width: 7px; height: 7px; border-radius: 50%; background: #ccc; }
+  .dot-step.on { background: #2b6cb0; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .footnote { font-size: 13px; color: #666; margin-top: 16px; }
+</style>
+</head>
+<body>
+
+<h1>StepViz — race conditions and mutex locks</h1>
+<p class="sub">Two threads incrementing one shared counter, step by step.</p>
+
+<div class="tabs">
+  <button class="tab-btn active" id="tab-race" onclick="switchTab('race')">Without a lock</button>
+  <button class="tab-btn" id="tab-mutex" onclick="switchTab('mutex')">With a mutex</button>
+</div>
+
+<div class="legend">
+  <span><span class="dot read"></span>Blue — Read / input</span>
+  <span><span class="dot compute"></span>Gray — Compute / transform</span>
+  <span><span class="dot write"></span>Red — Write / critical outcome</span>
+  <span id="legend-lock" style="display:none;"><span class="dot lock"></span>Amber — Lock / wait</span>
+</div>
+
+<!-- RACE CONDITION PANEL -->
+<div class="panel active" id="panel-race">
+
+  <div class="section-label">Output</div>
+  <div class="output-panel" id="race-output">
+    <div class="shared-title">Shared counter</div>
+    <div class="shared-value" id="race-shared-val">0</div>
+    <div class="shared-sub">memory</div>
+  </div>
+
+  <div class="section-label">Input / flow</div>
+  <div class="scene" id="race-board">
+    <div class="scene-cols">
+      <div class="process-card" id="race-a-card">
+        <div class="process-title">Thread A — local</div>
+        <div class="field-row"><span class="field-key">local_value</span><span class="field-val num empty" id="race-a-local">—</span></div>
+        <div class="field-row"><span class="field-key">last_op</span><span id="race-a-op"><span class="field-val empty">—</span></span></div>
+      </div>
+
+      <div class="process-card" id="race-b-card">
+        <div class="process-title">Thread B — local</div>
+        <div class="field-row"><span class="field-key">local_value</span><span class="field-val num empty" id="race-b-local">—</span></div>
+        <div class="field-row"><span class="field-key">last_op</span><span id="race-b-op"><span class="field-val empty">—</span></span></div>
+      </div>
+    </div>
+    <svg class="scene-connectors" id="race-svg"></svg>
+  </div>
+
+  <div id="race-caption">
+    <span id="race-caption-short">Press next to start.</span>
+    <span class="info-wrap">
+      <button class="info-btn" tabindex="0">?</button>
+      <span class="info-tip" id="race-caption-full">Both threads share one counter, starting at 0.</span>
+    </span>
+  </div>
+  <div class="controls">
+    <button class="nav" id="race-prev" onclick="raceStep(-1)">Back</button>
+    <button class="nav" id="race-next" onclick="raceStep(1)">Next</button>
+    <div class="dots" id="race-dots">
+      <span class="dot-step" data-i="0"></span><span class="dot-step" data-i="1"></span><span class="dot-step" data-i="2"></span>
+      <span class="dot-step" data-i="3"></span><span class="dot-step" data-i="4"></span><span class="dot-step" data-i="5"></span>
+    </div>
+  </div>
+  <p class="footnote">
+    Result: two threads each add 1, but the counter only goes up by 1 instead of 2 &mdash;
+    one update is silently lost because both threads worked from the same stale value.
+  </p>
+</div>
+
+<!-- MUTEX PANEL -->
+<div class="panel" id="panel-mutex">
+  <div class="top-row">
+    <div class="top-stat"><div class="label">Shared counter</div><div class="val" id="mutex-counter-val">0</div></div>
+    <div class="top-stat"><div class="label">Lock</div><div class="val" id="mutex-lock-val">Free</div></div>
+  </div>
+
+  <div class="board" id="mutex-board">
+    <div class="cols">
+      <div>
+        <div class="col-title">Thread A</div>
+        <div class="step-box type-lock" id="mutex-a-lock">Acquire lock &rarr; <span id="mutex-a-lock-val">?</span></div>
+        <div class="step-box type-compute" id="mutex-a-read">Read, add, write &rarr; <span id="mutex-a-read-val">?</span></div>
+        <div class="step-box type-lock" id="mutex-a-unlock">Release lock &rarr; <span id="mutex-a-unlock-val">?</span></div>
+      </div>
+      <div>
+        <div class="col-title">Thread B</div>
+        <div class="step-box type-lock" id="mutex-b-lock">Try to acquire lock &rarr; <span id="mutex-b-lock-val">?</span></div>
+        <div class="step-box type-compute" id="mutex-b-read">Read, add, write &rarr; <span id="mutex-b-read-val">?</span></div>
+        <div class="step-box type-lock" id="mutex-b-unlock">Release lock &rarr; <span id="mutex-b-unlock-val">?</span></div>
+      </div>
+    </div>
+    <svg class="connectors" id="mutex-svg"></svg>
+  </div>
+
+  <div id="mutex-caption">
+    <span id="mutex-caption-short">Press next to start.</span>
+    <span class="info-wrap">
+      <button class="info-btn" tabindex="0">?</button>
+      <span class="info-tip" id="mutex-caption-full">Each thread must hold the lock before touching the counter.</span>
+    </span>
+  </div>
+  <div class="controls">
+    <button class="nav" id="mutex-prev" onclick="mutexStep(-1)">Back</button>
+    <button class="nav" id="mutex-next" onclick="mutexStep(1)">Next</button>
+    <div class="dots" id="mutex-dots">
+      <span class="dot-step" data-i="0"></span><span class="dot-step" data-i="1"></span><span class="dot-step" data-i="2"></span>
+      <span class="dot-step" data-i="3"></span><span class="dot-step" data-i="4"></span><span class="dot-step" data-i="5"></span><span class="dot-step" data-i="6"></span>
+    </div>
+  </div>
+  <p class="footnote">
+    Result: the lock forces B to wait until A finishes its full read-add-write sequence.
+    Final counter is 2, correctly reflecting both increments.
+  </p>
+</div>
+
+<script>
+function switchTab(which) {
+  document.getElementById('tab-race').classList.toggle('active', which === 'race');
+  document.getElementById('tab-mutex').classList.toggle('active', which === 'mutex');
+  document.getElementById('panel-race').classList.toggle('active', which === 'race');
+  document.getElementById('panel-mutex').classList.toggle('active', which === 'mutex');
+  document.getElementById('legend-lock').style.display = which === 'mutex' ? 'inline' : 'none';
+  // redraw connectors for the now-visible panel since hidden panels report zero-size rects
+  if (which === 'race') raceRender(); else mutexRender();
+}
+
+// Draws a dashed curved connector between two element ids, inside a given board container,
+// with an optional label. mode 'side' connects right-edge to left-edge (original style);
+// mode 'top-arc' connects top-center to top-center, arcing upward over anything between them.
+function drawConnector(svg, boardId, fromId, toId, color, label, visible, mode){
+  const board = document.getElementById(boardId);
+  const boardRect = board.getBoundingClientRect();
+  const a = document.getElementById(fromId).getBoundingClientRect();
+  const b = document.getElementById(toId).getBoundingClientRect();
+  let x1, y1, x2, y2, arcY;
+  if (mode === 'top-arc') {
+    x1 = a.left + a.width/2 - boardRect.left; y1 = a.top - boardRect.top;
+    x2 = b.left + b.width/2 - boardRect.left; y2 = b.top - boardRect.top;
+    arcY = Math.min(y1, y2) - 34;
+  } else {
+    x1 = a.right - boardRect.left; y1 = a.top + a.height/2 - boardRect.top;
+    x2 = b.left - boardRect.left; y2 = b.top + b.height/2 - boardRect.top;
+  }
+  const midX = (x1 + x2) / 2;
+  const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+  if (mode === 'top-arc') {
+    path.setAttribute('d', `M ${x1},${y1} C ${x1},${arcY} ${x2},${arcY} ${x2},${y2}`);
+  } else {
+    path.setAttribute('d', `M ${x1},${y1} C ${midX},${y1} ${midX},${y2} ${x2},${y2}`);
+  }
+  path.setAttribute('stroke', color);
+  if (visible) path.classList.add('visible');
+  svg.appendChild(path);
+  if (label) {
+    const words = label.split(' ');
+    const maxCharsPerLine = 22;
+    const lines = [];
+    let current = '';
+    words.forEach(w => {
+      const test = current ? current + ' ' + w : w;
+      if (test.length > maxCharsPerLine && current) {
+        lines.push(current);
+        current = w;
+      } else {
+        current = test;
+      }
+    });
+    if (current) lines.push(current);
+
+    const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+    text.setAttribute('x', midX);
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('fill', color);
+    const labelY = mode === 'top-arc' ? arcY - 6 - (lines.length - 1) * 13 : (y1 + y2) / 2 - 8 - (lines.length - 1) * 12;
+    lines.forEach((line, idx) => {
+      const tspan = document.createElementNS('http://www.w3.org/2000/svg','tspan');
+      tspan.setAttribute('x', midX);
+      tspan.setAttribute('y', labelY + idx * 13);
+      tspan.textContent = line;
+      text.appendChild(tspan);
+    });
+    if (visible) text.classList.add('visible');
+    svg.appendChild(text);
+  }
+}
+
+// ---- Race condition panel ----
+const raceSteps = [
+  { active:'race-a-card', a:{local:'0', op:'read'}, shared:{value:'0', type:'read'},
+    short:'A reads → 0', caption:'Thread A reads the counter. It sees 0 and stores it locally.' },
+  { active:'race-b-card', b:{local:'0', op:'read'}, shared:{value:'0', type:'read'},
+    short:'B reads → 0', caption:'Before A writes anything back, thread B also reads the counter. It also sees 0.',
+    connect:{from:'race-a-card', to:'race-b-card', color:'#2b6cb0', label:'both read the same value'} },
+  { active:'race-a-card', a:{local:'1', op:'compute'}, shared:{value:'0', type:'read'},
+    short:'A computes 0 + 1', caption:'Thread A computes 0 + 1 = 1 in its own local copy. The shared counter is still 0.' },
+  { active:'race-b-card', b:{local:'1', op:'compute'}, shared:{value:'0', type:'read'},
+    short:'B computes 0 + 1', caption:'Thread B computes 0 + 1 = 1 too, using the stale value it read earlier.' },
+  { active:'race-a-card', a:{local:'1', op:'write'}, shared:{value:'1', type:'write'},
+    short:'A writes 1', caption:'Thread A writes 1 back to the shared counter.' },
+  { active:'race-b-card', b:{local:'1', op:'write'}, shared:{value:'1', type:'write'},
+    short:'B writes 1 (overwrites A)', caption:"Thread B writes 1 back too, overwriting A's update. Two increments happened, but the counter only went up by one. That's the race condition.",
+    connect:{from:'race-a-card', to:'race-b-card', color:'#c53030', label:"B overwrites A's update — one increment lost"} }
+];
+let ri = -1;
+
+function setOpField(spanId, op){
+  const el = document.getElementById(spanId);
+  if (op) el.innerHTML = `<span class="op-badge ${op}">${op}</span>`;
+  else el.innerHTML = `<span class="field-val empty">—</span>`;
+}
+
+function raceRender(){
+  document.querySelectorAll('#race-dots .dot-step').forEach(d => d.classList.toggle('on', +d.dataset.i <= ri));
+  document.getElementById('race-a-card').classList.remove('active');
+  document.getElementById('race-b-card').classList.remove('active');
+
+  let aLocal = '—', bLocal = '—', aOp = null, bOp = null, sharedVal = '0', sharedType = 'read';
+  for (let k = 0; k <= ri; k++) {
+    const s = raceSteps[k];
+    if (s.a) { aLocal = s.a.local; aOp = s.a.op; }
+    if (s.b) { bLocal = s.b.local; bOp = s.b.op; }
+    if (s.shared) { sharedVal = s.shared.value; sharedType = s.shared.type; }
+  }
+  const aLocalEl = document.getElementById('race-a-local');
+  aLocalEl.textContent = aLocal; aLocalEl.classList.toggle('empty', aLocal === '—');
+  const bLocalEl = document.getElementById('race-b-local');
+  bLocalEl.textContent = bLocal; bLocalEl.classList.toggle('empty', bLocal === '—');
+  setOpField('race-a-op', aOp);
+  setOpField('race-b-op', bOp);
+  document.getElementById('race-shared-val').textContent = sharedVal;
+  document.getElementById('race-output').classList.toggle('type-write', sharedType === 'write');
+  document.getElementById('race-output').classList.toggle('type-read', sharedType === 'read');
+
+  if (ri >= 0) document.getElementById(raceSteps[ri].active).classList.add('active');
+
+  document.getElementById('race-caption-short').textContent = ri >= 0 ? raceSteps[ri].short : 'Press next to start.';
+  document.getElementById('race-caption-full').textContent = ri >= 0 ? raceSteps[ri].caption : 'Both threads share one counter, starting at 0.';
+  document.getElementById('race-prev').disabled = ri < 0;
+  document.getElementById('race-next').disabled = ri >= raceSteps.length - 1;
+
+  const svg = document.getElementById('race-svg');
+  svg.innerHTML = '';
+  for (let k = 0; k <= ri; k++) {
+    const c = raceSteps[k].connect;
+    if (c) drawConnector(svg, 'race-board', c.from, c.to, c.color, c.label, k === ri, 'side');
+  }
+}
+function raceStep(dir){ ri = Math.max(-1, Math.min(raceSteps.length - 1, ri + dir)); raceRender(); }
+
+// ---- Mutex panel ----
+const mutexSteps = [
+  {id:'mutex-a-lock', set:['mutex-a-lock-val','Acquired'], short:'A acquires lock', caption:'Thread A requests the lock. It is free, so A acquires it and now has exclusive access to the counter.', counter:0, lock:'Held by A', boxId:'mutex-a-lock', blocked:false},
+  {id:'mutex-b-lock', set:['mutex-b-lock-val','Blocked'], short:'B blocked, waits', caption:'Thread B tries to acquire the lock too, but A already holds it. B must wait.', counter:0, lock:'Held by A', boxId:'mutex-b-lock', blocked:true, connect:{from:'mutex-a-lock', to:'mutex-b-lock', color:'#b7791f', label:'A holds the lock, so B blocks'}},
+  {id:'mutex-a-read', set:['mutex-a-read-val','0 to 1'], short:'A updates 0 → 1', caption:'While B waits, A safely reads 0, adds 1, and writes 1 back. No one else can touch the counter right now.', counter:1, lock:'Held by A', boxId:'mutex-a-read', blocked:false},
+  {id:'mutex-a-unlock', set:['mutex-a-unlock-val','Released'], short:'A releases lock', caption:'A releases the lock. The counter is now safely updated to 1.', counter:1, lock:'Free', boxId:'mutex-a-unlock', blocked:false},
+  {id:'mutex-b-lock2', set:['mutex-b-lock-val','Acquired'], short:'B acquires lock', caption:'The lock is free again, so thread B, which was waiting, now acquires it.', counter:1, lock:'Held by B', boxId:'mutex-b-lock', blocked:false, connect:{from:'mutex-a-unlock', to:'mutex-b-lock', color:'#b7791f', label:'B acquires right after A releases'}},
+  {id:'mutex-b-read', set:['mutex-b-read-val','1 to 2'], short:'B updates 1 → 2', caption:'B reads the current value, 1, adds 1, and writes 2 back. Nothing is lost this time.', counter:2, lock:'Held by B', boxId:'mutex-b-read', blocked:false},
+  {id:'mutex-b-unlock', set:['mutex-b-unlock-val','Released'], short:'B releases lock', caption:'B releases the lock. Final counter is 2, the correct result of two increments.', counter:2, lock:'Free', boxId:'mutex-b-unlock', blocked:false}
+];
+let mi = -1;
+function mutexRender(){
+  document.querySelectorAll('#mutex-dots .dot-step').forEach((d, idx) => d.classList.toggle('on', idx <= mi && idx < 7));
+  document.querySelectorAll('#panel-mutex .step-box').forEach(el => el.classList.remove('active','blocked'));
+  document.getElementById('mutex-counter-val').textContent = mi >= 0 ? mutexSteps[mi].counter : 0;
+  document.getElementById('mutex-lock-val').textContent = mi >= 0 ? mutexSteps[mi].lock : 'Free';
+  document.getElementById('mutex-caption-short').textContent = mi >= 0 ? mutexSteps[mi].short : 'Press next to start.';
+  document.getElementById('mutex-caption-full').textContent = mi >= 0 ? mutexSteps[mi].caption : 'Each thread must hold the lock before touching the counter.';
+  const fields = {'mutex-a-lock-val':'?','mutex-a-read-val':'?','mutex-a-unlock-val':'?','mutex-b-lock-val':'?','mutex-b-read-val':'?','mutex-b-unlock-val':'?'};
+  for (let k = 0; k <= mi; k++) fields[mutexSteps[k].set[0]] = mutexSteps[k].set[1];
+  Object.keys(fields).forEach(id => document.getElementById(id).textContent = fields[id]);
+  if (mi >= 0) {
+    const step = mutexSteps[mi];
+    document.getElementById(step.boxId).classList.add(step.blocked ? 'blocked' : 'active');
+  }
+  document.getElementById('mutex-prev').disabled = mi < 0;
+  document.getElementById('mutex-next').disabled = mi >= mutexSteps.length - 1;
+
+  const svg = document.getElementById('mutex-svg');
+  svg.innerHTML = '';
+  for (let k = 0; k <= mi; k++) {
+    const c = mutexSteps[k].connect;
+    if (c) drawConnector(svg, 'mutex-board', c.from, c.to, c.color, c.label, k === mi);
+  }
+}
+function mutexStep(dir){ mi = Math.max(-1, Math.min(mutexSteps.length - 1, mi + dir)); mutexRender(); }
+
+raceRender();
+mutexRender();
+</script>
+
+</body>
+</html>
