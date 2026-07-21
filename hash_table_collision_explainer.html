@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>StepViz — Hash table collisions (separate chaining)</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    max-width: 680px;
+    margin: 32px auto;
+    padding: 0 16px;
+    color: #222;
+    background: #fff;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  p.sub { color: #666; font-size: 14px; margin-top: 0; margin-bottom: 16px; }
+
+  /* Legend pill */
+  .legend {
+    display: flex; gap: 22px; margin-bottom: 16px; font-size: 13px; color: #444;
+    background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px 18px;
+  }
+  .legend .dot { width: 9px; height: 9px; border-radius: 3px; display: inline-block; margin-right: 7px; vertical-align: middle; }
+  .legend .read { background: #2b6cb0; }
+  .legend .compute { background: #718096; }
+  .legend .write { background: #c53030; }
+
+  /* Section labels */
+  .section-label {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; font-weight: 600;
+    letter-spacing: .06em; color: #9aa1ad; text-transform: uppercase; margin: 4px 0 8px;
+  }
+
+  /* Widget scene wrapper — lets connectors span across the output and flow panels */
+  .scene { position: relative; }
+
+  /* Output panel (top) — row of bucket cells */
+  .output-panel {
+    background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 14px;
+    padding: 20px; margin-bottom: 18px; position: relative; z-index: 2;
+  }
+  .bucket-row { display: flex; justify-content: center; gap: 12px; }
+  .bucket-cell {
+    background: #fff; border: 1px solid #e2e5ea; border-radius: 10px; padding: 10px 14px;
+    min-width: 64px; text-align: center; transition: border-color .2s ease, background .2s ease;
+  }
+  .bucket-cell.just-written { border-color: #c53030; background: #fff7f7; }
+  .bucket-index {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 10px; font-weight: 600;
+    color: #8a93a3; margin-bottom: 6px;
+  }
+  .bucket-contents {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; font-weight: 600;
+    color: #c2410c; min-height: 18px;
+  }
+  .bucket-contents.empty { color: #c3c8d1; font-weight: 400; }
+  .output-sub { text-align: center; font-size: 11px; color: #aab0bb; margin-top: 10px; }
+
+  /* Input panel (middle) — the value currently feeding the flow below */
+  .input-panel {
+    background: #f3f8ff; border: 2px solid #2b6cb0; border-radius: 14px;
+    padding: 14px 20px; margin-bottom: 18px; text-align: center; position: relative; z-index: 2;
+    transition: box-shadow .15s ease;
+  }
+  .input-panel.active { box-shadow: 0 0 0 2px #2b6cb0 inset; }
+  .shared-title {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 10px; font-weight: 600;
+    letter-spacing: .04em; color: #8a93a3; text-transform: uppercase; margin-bottom: 6px;
+  }
+  .shared-value { font-family: "SF Mono", Menlo, Consolas, monospace; font-weight: 700; color: #1a1a1a; }
+  .shared-sub { font-size: 11px; color: #aab0bb; margin-top: 6px; }
+
+  /* Input/flow panel (bottom) */
+  .board {
+    background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 14px;
+    padding: 22px; position: relative; z-index: 2;
+  }
+  .col-title {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; font-weight: 600;
+    letter-spacing: .04em; color: #8a93a3; text-transform: uppercase; text-align: center; margin-bottom: 10px;
+  }
+  .step-box {
+    border: 1px solid #e2e5ea; border-left: 4px solid #ccc; border-radius: 8px; padding: 10px 12px;
+    margin-bottom: 8px; font-size: 13px; background: #fff; transition: all .15s ease; max-width: 340px; margin-left: auto; margin-right: auto;
+  }
+  .step-box.type-read { border-left-color: #2b6cb0; }
+  .step-box.type-compute { border-left-color: #718096; }
+  .step-box.type-write { border-left-color: #c53030; }
+  .step-box.active { border-color: #2b6cb0; background: #ebf4ff; box-shadow: 0 0 0 1px #2b6cb0 inset; }
+  .step-box.active.type-write { border-color: #c53030; background: #fff5f5; box-shadow: 0 0 0 1px #c53030 inset; }
+  .step-val { font-weight: 600; color: #c2410c; }
+
+  .chain-visual {
+    display: none; align-items: center; justify-content: center; gap: 8px;
+    margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e2e5ea;
+  }
+  .chain-visual.show { display: flex; }
+  .chain-node {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; font-weight: 600;
+    padding: 4px 10px; border-radius: 6px; color: #fff; background: #718096;
+  }
+  .chain-node.new { background: #c53030; }
+  .chain-arrow { color: #c53030; font-weight: 700; font-size: 14px; }
+  .chain-gap { color: #c3c8d1; font-weight: 700; letter-spacing: 2px; }
+  .chain-label { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; color: #aab0bb; }
+
+  svg.scene-connectors { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; overflow: visible; }
+  svg.scene-connectors path { fill: none; stroke-width: 2; stroke-dasharray: 5 4; opacity: 0; transition: opacity .2s ease; }
+  svg.scene-connectors path.visible { opacity: 1; }
+  svg.scene-connectors text {
+    font-size: 11px; opacity: 0; transition: opacity .2s ease;
+    paint-order: stroke fill; stroke: #fff; stroke-width: 5px; stroke-linejoin: round;
+  }
+  svg.scene-connectors text.visible { opacity: 1; }
+
+  #caption {
+    font-size: 14px; color: #444; min-height: 24px; margin: 14px 0 16px; line-height: 1.5;
+    display: flex; align-items: center; gap: 6px; justify-content: center;
+  }
+  .info-wrap { position: relative; display: inline-flex; }
+  .info-btn {
+    width: 17px; height: 17px; border-radius: 50%; border: 1px solid #bbb;
+    background: #f2f2f2; color: #666; font-size: 11px; font-weight: 600;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: help; padding: 0; line-height: 1;
+  }
+  .info-tip {
+    visibility: hidden; opacity: 0; position: absolute; bottom: 140%; left: 50%;
+    transform: translateX(-50%); background: #2d3748; color: #fff; padding: 8px 10px;
+    border-radius: 6px; font-size: 12px; line-height: 1.4; width: 260px;
+    transition: opacity .15s ease; z-index: 20; pointer-events: none;
+  }
+  .info-tip::after {
+    content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+    border: 5px solid transparent; border-top-color: #2d3748;
+  }
+  .info-wrap:hover .info-tip, .info-btn:focus + .info-tip { visibility: visible; opacity: 1; }
+
+  .controls { display: flex; align-items: center; justify-content: center; gap: 10px; }
+  button.nav {
+    padding: 8px 16px; border: 1px solid #bbb; border-radius: 6px;
+    background: #fff; cursor: pointer; font-size: 14px;
+  }
+  button.nav:disabled { opacity: 0.4; cursor: default; }
+  .dots { display: flex; gap: 5px; margin-left: 8px; flex-wrap: wrap; max-width: 200px; }
+  .dot-step { width: 7px; height: 7px; border-radius: 50%; background: #ccc; }
+  .dot-step.on { background: #2b6cb0; }
+  .footnote { font-size: 13px; color: #666; margin-top: 16px; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>StepViz — hash table collisions</h1>
+<p class="sub">Inserting 3 keys into a 5-bucket hash table using separate chaining — the third one collides, so we'll slow down and watch that step by step.</p>
+
+<div class="legend">
+  <span><span class="dot read"></span>Blue — Read / input</span>
+  <span><span class="dot compute"></span>Gray — Compute / transform</span>
+  <span><span class="dot write"></span>Red — Write / critical outcome</span>
+</div>
+
+<div class="scene" id="hash-scene">
+
+  <div class="section-label">Output</div>
+  <div class="output-panel" id="hash-output">
+    <div class="bucket-row">
+      <div class="bucket-cell" id="bucket-0"><div class="bucket-index">0</div><div class="bucket-contents empty" id="bucket-0-val">&mdash;</div></div>
+      <div class="bucket-cell" id="bucket-1"><div class="bucket-index">1</div><div class="bucket-contents empty" id="bucket-1-val">&mdash;</div></div>
+      <div class="bucket-cell" id="bucket-2"><div class="bucket-index">2</div><div class="bucket-contents empty" id="bucket-2-val">&mdash;</div></div>
+      <div class="bucket-cell" id="bucket-3"><div class="bucket-index">3</div><div class="bucket-contents empty" id="bucket-3-val">&mdash;</div></div>
+      <div class="bucket-cell" id="bucket-4"><div class="bucket-index">4</div><div class="bucket-contents empty" id="bucket-4-val">&mdash;</div></div>
+    </div>
+    <div class="output-sub">hash table (size 5)</div>
+  </div>
+
+  <div class="section-label">Input</div>
+  <div class="input-panel" id="hash-input">
+    <div class="shared-title">Current key</div>
+    <div class="shared-value" id="hash-input-val" style="font-size:22px;">?</div>
+    <div class="shared-sub">read</div>
+  </div>
+
+  <div class="section-label">Flow</div>
+  <div class="board" id="hash-board">
+    <div class="col-title">Insert operation</div>
+    <div class="step-box type-compute" id="hash-step-compute">Compute hash &rarr; <span class="step-val" id="hash-compute-val">?</span></div>
+    <div class="step-box type-write" id="hash-step-write">
+      Insert into bucket &rarr; <span class="step-val" id="hash-write-val">?</span>
+      <div class="chain-visual" id="hash-chain-visual"></div>
+    </div>
+  </div>
+
+  <svg class="scene-connectors" id="hash-svg"></svg>
+</div>
+
+<div id="caption">
+  <span id="caption-short">Press next to start.</span>
+  <span class="info-wrap">
+    <button class="info-btn" tabindex="0">?</button>
+    <span class="info-tip" id="caption-full">We'll insert 3 keys, one at a time, into a hash table with 5 buckets.</span>
+  </span>
+</div>
+<div class="controls">
+  <button class="nav" id="prev-btn" onclick="step(-1)">Back</button>
+  <button class="nav" id="next-btn" onclick="step(1)">Next</button>
+  <div class="dots" id="dots"></div>
+</div>
+<p class="footnote">
+  Result: "cat" and "rat" both hash to bucket 2. Instead of overwriting, "rat" is linked in as the new head,
+  pointing to "cat" &mdash; that link is what makes lookups in a collided bucket slower than O(1).
+</p>
+
+<script>
+function charSum(s){ let sum = 0; for (const c of s) sum += c.charCodeAt(0); return sum; }
+
+// cat and dog insert cleanly; rat collides with cat at bucket 2.
+// The colliding insert is broken into 4 sub-steps so you can watch the chain link form.
+const keys = ['cat', 'dog', 'rat'];
+const hashes = {};
+keys.forEach(k => hashes[k] = charSum(k) % 5);
+
+const steps = [];
+keys.forEach((key, ki) => {
+  const sum = charSum(key);
+  const idx = hashes[key];
+  const collides = ki > 0 && keys.slice(0, ki).some(prev => hashes[prev] === idx);
+  const existingHead = collides ? keys.slice(0, ki).find(prev => hashes[prev] === idx) : null;
+
+  steps.push({
+    phase: 'read', key, value: `"${key}"`,
+    short: `Read key → "${key}"`,
+    caption: `Read the next key to insert: "${key}".`
+  });
+  steps.push({
+    phase: 'compute', key, value: `${sum} mod 5 = ${idx}`,
+    short: `hash("${key}") = ${idx}`,
+    caption: `Sum the character codes of "${key}" (${sum}), then take mod 5 to get index ${idx}.`
+  });
+
+  if (!collides) {
+    steps.push({
+      phase: 'write', key, idx, commitsBucket: true,
+      value: `bucket ${idx} (new)`,
+      short: `Insert "${key}" at bucket ${idx}`,
+      caption: `Bucket ${idx} was empty, so "${key}" becomes the first entry there.`,
+      visual: { type: 'empty-to-node', newNode: key }
+    });
+  } else {
+    steps.push({
+      phase: 'write', key, idx, commitsBucket: false,
+      value: `check bucket ${idx} → occupied ("${existingHead}")`,
+      short: `Check bucket ${idx} → occupied`,
+      caption: `Bucket ${idx} already holds "${existingHead}". Before inserting, we look at what's already there.`,
+      visual: { type: 'existing-only', existing: existingHead }
+    });
+    steps.push({
+      phase: 'write', key, idx, commitsBucket: false,
+      value: `create new node: "${key}"`,
+      short: `Create new node "${key}"`,
+      caption: `A new node is created to hold "${key}". It isn't linked into the chain yet.`,
+      visual: { type: 'new-unlinked', existing: existingHead, newNode: key }
+    });
+    steps.push({
+      phase: 'write', key, idx, commitsBucket: false,
+      value: `${key}.next = ${existingHead}`,
+      short: `Link "${key}" → "${existingHead}"`,
+      caption: `The new node's pointer is set to point at the existing head. "${key}" now points to "${existingHead}".`,
+      visual: { type: 'linked', existing: existingHead, newNode: key },
+      connect: true
+    });
+    steps.push({
+      phase: 'write', key, idx, commitsBucket: true,
+      value: `bucket ${idx} head = "${key}"`,
+      short: `Bucket ${idx} head → "${key}"`,
+      caption: `The bucket's head pointer is updated to the new node. "${key}" is now the head of the chain at bucket ${idx}.`,
+      visual: { type: 'linked', existing: existingHead, newNode: key }
+    });
+  }
+});
+
+let si = -1;
+const bucketState = {0:[],1:[],2:[],3:[],4:[]};
+
+function renderDots(){
+  const dotsEl = document.getElementById('dots');
+  dotsEl.innerHTML = '';
+  steps.forEach((s, i) => {
+    const d = document.createElement('span');
+    d.className = 'dot-step';
+    dotsEl.appendChild(d);
+  });
+}
+renderDots();
+
+function drawConnector(fromId, toId, color, label){
+  const svg = document.getElementById('hash-svg');
+  const sceneRect = document.getElementById('hash-scene').getBoundingClientRect();
+  const a = document.getElementById(fromId).getBoundingClientRect();
+  const b = document.getElementById(toId).getBoundingClientRect();
+  const x1 = a.left + a.width/2 - sceneRect.left, y1 = a.bottom - sceneRect.top;
+  const x2 = b.left + b.width/2 - sceneRect.left, y2 = b.top - sceneRect.top;
+  const midY = (y1 + y2) / 2;
+  const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('d', `M ${x1},${y1} C ${x1},${midY} ${x2},${midY} ${x2},${y2}`);
+  path.setAttribute('stroke', color);
+  path.classList.add('visible');
+  svg.appendChild(path);
+
+  const words = label.split(' ');
+  const lines = [];
+  let current = '';
+  words.forEach(w => {
+    const test = current ? current + ' ' + w : w;
+    if (test.length > 22 && current) { lines.push(current); current = w; }
+    else { current = test; }
+  });
+  if (current) lines.push(current);
+
+  const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+  text.setAttribute('x', (x1 + x2) / 2);
+  text.setAttribute('text-anchor', 'middle');
+  text.setAttribute('fill', color);
+  const startY = midY - (lines.length - 1) * 6.5;
+  lines.forEach((line, idx) => {
+    const tspan = document.createElementNS('http://www.w3.org/2000/svg','tspan');
+    tspan.setAttribute('x', (x1 + x2) / 2);
+    tspan.setAttribute('y', startY + idx * 13);
+    tspan.textContent = line;
+    text.appendChild(tspan);
+  });
+  text.classList.add('visible');
+  svg.appendChild(text);
+}
+
+function render(){
+  document.querySelectorAll('#dots .dot-step').forEach((d, idx) => d.classList.toggle('on', idx <= si));
+  document.querySelectorAll('.step-box').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.bucket-cell').forEach(el => el.classList.remove('just-written'));
+
+  // Reset bucket state and replay every write step up to si
+  for (const k in bucketState) bucketState[k] = [];
+  let readVal = '?', computeVal = '?', writeVal = '?';
+  let lastWriteIdx = null;
+
+  for (let k = 0; k <= si; k++) {
+    const s = steps[k];
+    if (s.phase === 'read') readVal = s.value;
+    if (s.phase === 'compute') computeVal = s.value;
+    if (s.phase === 'write' && s.commitsBucket) {
+      bucketState[s.idx].unshift(s.key); // new nodes are inserted at the head of the chain
+      writeVal = s.value;
+      lastWriteIdx = s.idx;
+    } else if (s.phase === 'write') {
+      writeVal = s.value;
+    }
+  }
+
+  // within-cycle reset: if current step is a fresh 'read', clear compute/write placeholders visually
+  if (si >= 0 && steps[si].phase === 'read') { computeVal = '?'; writeVal = '?'; }
+  if (si >= 0 && steps[si].phase === 'compute') { writeVal = '?'; }
+
+  document.getElementById('hash-input-val').textContent = readVal;
+  document.getElementById('hash-compute-val').textContent = computeVal;
+  document.getElementById('hash-write-val').textContent = writeVal;
+
+  for (let idx = 0; idx < 5; idx++) {
+    const el = document.getElementById(`bucket-${idx}-val`);
+    const chain = bucketState[idx];
+    el.textContent = chain.length ? chain.join(' → ') : '—';
+    el.classList.toggle('empty', chain.length === 0);
+  }
+  if (si >= 0 && steps[si].phase === 'write' && steps[si].commitsBucket) {
+    document.getElementById(`bucket-${steps[si].idx}`).classList.add('just-written');
+  }
+
+  document.getElementById('hash-input').classList.toggle('active', si >= 0 && steps[si].phase === 'read');
+  if (si >= 0 && steps[si].phase !== 'read') {
+    const phase = steps[si].phase;
+    document.getElementById(`hash-step-${phase}`).classList.add('active');
+  }
+
+  const chainVisual = document.getElementById('hash-chain-visual');
+  if (si >= 0 && steps[si].phase === 'write' && steps[si].visual) {
+    const v = steps[si].visual;
+    let html = '';
+    if (v.type === 'empty-to-node') {
+      html = `<span class="chain-label">bucket empty</span><span class="chain-arrow">&rarr;</span><span class="chain-node new">${v.newNode}</span>`;
+    } else if (v.type === 'existing-only') {
+      html = `<span class="chain-label">existing head</span><span class="chain-arrow">&rarr;</span><span class="chain-node">${v.existing}</span>`;
+    } else if (v.type === 'new-unlinked') {
+      html = `<span class="chain-node new">${v.newNode}</span><span class="chain-gap">···</span><span class="chain-node">${v.existing}</span>`;
+    } else if (v.type === 'linked') {
+      html = `<span class="chain-node new">${v.newNode}</span><span class="chain-arrow">&rarr;</span><span class="chain-node">${v.existing}</span>`;
+    }
+    chainVisual.innerHTML = html;
+    chainVisual.classList.add('show');
+  } else {
+    chainVisual.classList.remove('show');
+    chainVisual.innerHTML = '';
+  }
+
+  document.getElementById('caption-short').textContent = si >= 0 ? steps[si].short : 'Press next to start.';
+  document.getElementById('caption-full').textContent = si >= 0 ? steps[si].caption : "We'll insert 3 keys, one at a time, into a hash table with 5 buckets.";
+  document.getElementById('prev-btn').disabled = si < 0;
+  document.getElementById('next-btn').disabled = si >= steps.length - 1;
+
+  const svg = document.getElementById('hash-svg');
+  svg.innerHTML = '';
+  if (si >= 0 && steps[si].connect) {
+    drawConnector(`bucket-${steps[si].idx}`, 'hash-step-write', '#c53030', `existing head lives here — new node points to it`);
+  }
+}
+function step(dir){ si = Math.max(-1, Math.min(steps.length - 1, si + dir)); render(); }
+render();
+</script>
+
+</body>
+</html>
