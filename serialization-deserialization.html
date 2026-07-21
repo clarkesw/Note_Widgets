@@ -8,210 +8,178 @@
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#FFFFFF;
-    --panel:#F5F6F8;
-    --panel-2:#FFFFFF;
-    --border:#DEE1E7;
-    --text:#14171F;
-    --text-dim:#5B6473;
-    --blue:#2F6FED;      --blue-dim: rgba(47,111,237,.10);
-    --gray:#6B7280;      --gray-dim: rgba(107,114,128,.10);
-    --red:#D93A3F;       --red-dim: rgba(217,58,63,.10);
+    --page-bg:#ffffff;
+    --panel-surface:#f7f8fa;
+    --panel-border:#e5e7eb;
+    --card-surface:#ffffff;
+    --card-border:#e2e5ea;
+    --text-strong:#1a1a1a;
+    --text-body:#444444;
+    --text-body-2:#222222;
+    --label-muted:#6b7280;
+    --label-section:#8a93a3;
+    --label-section-2:#9aa1ad;
+    --placeholder:#c3c8d1;
+    --tooltip-bg:#2d3748;
+    --val-num:#0969da;
+    --val-str:#c2410c;
+    --val-bool:#8250df;
+
+    --blue:#2b6cb0;   --blue-dim: rgba(43,108,176,.08);   --blue-dim2: rgba(43,108,176,.16);
+    --gray:#718096;   --gray-dim: rgba(113,128,150,.08);  --gray-dim2: rgba(113,128,150,.16);
+    --red:#c53030;    --red-dim: rgba(197,48,48,.08);     --red-dim2: rgba(197,48,48,.16);
   }
-  *{box-sizing:border-box;}
+  *{ box-sizing:border-box; }
   body{
-    margin:0; background:var(--bg); color:var(--text);
-    font-family:'Inter',system-ui,sans-serif;
-    padding:28px 16px 48px; display:flex; justify-content:center;
+    margin:0; background:var(--page-bg); color:var(--text-body-2);
+    font-family:'Inter',system-ui,sans-serif; padding:28px 16px 48px;
+    display:flex; justify-content:center;
   }
-  .wrap{ width:100%; max-width:880px; }
-  header{ margin-bottom:18px; }
+  .wrap{ width:100%; max-width:760px; }
+  .mono{ font-family:'JetBrains Mono',monospace; }
+
+  header{ margin-bottom:16px; }
   .eyebrow{
     font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:.12em;
-    color:var(--text-dim); text-transform:uppercase; margin:0 0 6px;
+    color:var(--label-section); text-transform:uppercase; margin:0 0 6px;
   }
-  h1{ font-size:22px; margin:0 0 4px; font-weight:700; letter-spacing:-.01em;}
-  .variant-note{ font-size:13px; color:var(--text-dim); margin:0; }
-  .variant-note code{ font-family:'JetBrains Mono',monospace; background:var(--panel-2); padding:1px 5px; border-radius:4px; }
+  h1{ font-size:21px; margin:0 0 4px; font-weight:700; color:var(--text-strong); letter-spacing:-.01em; }
+  .variant-note{ font-size:13px; color:var(--label-muted); margin:0; }
+  .variant-note code{ font-family:'JetBrains Mono',monospace; background:var(--panel-surface); border:1px solid var(--panel-border); padding:1px 5px; border-radius:4px; }
 
-  /* legend */
+  /* legend pill */
   .legend{
-    display:flex; flex-wrap:wrap; gap:14px; margin:18px 0 20px;
-    background:var(--panel); border:1px solid var(--border); border-radius:10px;
-    padding:10px 14px;
+    display:flex; flex-wrap:wrap; gap:14px; margin:16px 0 20px;
+    background:var(--panel-surface); border:1px solid var(--panel-border); border-radius:12px;
+    padding:9px 14px;
   }
-  .legend-item{ display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--text-dim); }
-  .legend-item.dim{ opacity:.55; }
-  .legend-item em{ font-style:normal; }
-  .swatch{ width:11px; height:11px; border-radius:3px; display:inline-block; flex:none; }
-  .swatch.blue{ background:var(--blue);} .swatch.gray{ background:var(--gray);}
-  .swatch.red{ background:var(--red);}
+  .legend-item{ display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--text-body); }
+  .swatch{ width:10px; height:10px; border-radius:3px; display:inline-block; flex:none; }
+  .swatch.blue{ background:var(--blue);} .swatch.gray{ background:var(--gray);} .swatch.red{ background:var(--red);}
 
-  /* canvas */
-  .canvas{
-    background:var(--panel); border:1px solid var(--border); border-radius:14px;
-    padding:26px 20px 22px; display:flex; align-items:center; justify-content:space-between;
-    gap:8px; position:relative; overflow:hidden;
+  /* shared panel chrome */
+  .viz-root{ position:relative; }
+  #connector-svg{ position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; z-index:2; }
+  .panel{
+    background:var(--panel-surface); border:1.5px solid var(--panel-border); border-radius:14px;
+    padding:14px 16px 16px; margin-bottom:14px; position:relative; transition:border-color .35s ease, background .35s ease;
   }
-  .process-card{ width:220px; flex:none; }
-  .process-label{
-    font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--text-dim);
-    text-transform:uppercase; letter-spacing:.08em; margin-bottom:8px; text-align:center;
-  }
-  .object-box{
-    background:var(--panel-2); border:2px solid var(--border); border-radius:10px;
-    padding:10px 12px; transition:border-color .35s ease, box-shadow .35s ease;
-  }
-  .object-box.b-blue{ border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-dim);}
-  .object-box.b-gray{ border-color:var(--gray); box-shadow:0 0 0 3px var(--gray-dim);}
-  .object-box.b-red{  border-color:var(--red);  box-shadow:0 0 0 3px var(--red-dim);}
-  .object-title{
-    font-family:'JetBrains Mono',monospace; font-weight:600; font-size:12.5px;
-    color:var(--text); margin-bottom:6px; display:flex; gap:6px; align-items:baseline;
-  }
-  .new-tag{ font-size:10px; color:var(--text-dim); font-weight:400; }
-  .field-row{
-    display:flex; justify-content:space-between; gap:10px;
-    font-family:'JetBrains Mono',monospace; font-size:12px; padding:3px 6px; border-radius:5px;
-    margin:2px -6px; transition:background-color .3s ease, box-shadow .3s ease; border-left:2px solid transparent;
-  }
-  .field-row .fkey{ color:var(--text-dim); }
-  .field-row .fval{ color:var(--text); }
-  .field-row.hl-blue{ background:var(--blue-dim); border-left-color:var(--blue); }
-  .field-row.hl-red{ background:var(--red-dim); border-left-color:var(--red); }
-
-  /* channel / wire */
-  .channel{
-    flex:1; min-width:170px; display:flex; flex-direction:column; align-items:center;
-    gap:6px; position:relative; padding:0 4px;
-  }
-  .trace{
-    width:100%; height:2px; background:
-      repeating-linear-gradient(90deg, var(--border) 0 6px, transparent 6px 11px);
-    position:relative;
-  }
-  .gear{
-    font-size:15px; color:var(--border); transition:color .3s ease, transform .6s linear;
-    line-height:1;
-  }
-  .gear.active{ color:var(--gray); animation:spin 2.2s linear infinite; }
-  @keyframes spin{ to{ transform:rotate(360deg); } }
-
-  .json-capsule{
-    font-family:'JetBrains Mono',monospace; font-size:10.5px; text-align:center;
-    background:var(--panel-2); border:2px solid var(--border); border-radius:8px;
-    padding:6px 8px; width:100%; opacity:0; transform:translateY(-4px) scale(.9);
-    transition:opacity .35s ease, transform .35s ease, border-color .35s ease, box-shadow .35s ease;
-    pointer-events:none;
-  }
-  .json-capsule.visible{ opacity:1; transform:translateY(0) scale(1); }
-  .json-capsule.dim{ opacity:.55; }
-  .json-capsule .json-label{ color:var(--text-dim); font-size:9px; text-transform:uppercase; letter-spacing:.08em; margin-bottom:2px; }
-  .json-capsule.b-blue{ border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-dim);}
-  .json-capsule.b-gray{ border-color:var(--gray); box-shadow:0 0 0 3px var(--gray-dim);}
-  .json-capsule.b-red{  border-color:var(--red);  box-shadow:0 0 0 3px var(--red-dim);}
-
-  .storage{
-    font-family:'JetBrains Mono',monospace; font-size:9.5px; color:var(--text-dim);
-    display:flex; align-items:center; gap:4px;
+  .section-label{
+    font-family:'JetBrains Mono',monospace; font-size:10.5px; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--label-section); margin-bottom:10px;
   }
 
-  .flow-dot{
-    position:absolute; top:-1px; width:5px; height:4px; border-radius:1px;
-    background:var(--gray); opacity:0;
+  /* output panel */
+  #output-panel.tint-red{ border-color: rgba(197,48,48,.45); background: linear-gradient(var(--red-dim), var(--red-dim)), var(--panel-surface); }
+  #output-panel.flash{ animation: pulseRed .7s ease; }
+  @keyframes pulseRed{ 0%{ box-shadow:0 0 0 0 rgba(197,48,48,.35);} 100%{ box-shadow:0 0 0 10px rgba(197,48,48,0);} }
+  .out-row{ display:flex; gap:10px; justify-content:center; }
+  .out-cell{
+    background:var(--card-surface); border:1.5px solid var(--card-border); border-radius:10px;
+    padding:9px 14px; min-width:78px; text-align:center; transition:border-color .3s ease;
   }
-  .channel.flow-write .flow-dot, .channel.flow-read .flow-dot{ opacity:1; animation:flowmove 1.1s linear infinite; }
-  .channel.flow-write .flow-dot{ background:var(--red); left:0; animation-name:flowRight; }
-  .channel.flow-read .flow-dot{ background:var(--blue); right:0; animation-name:flowRight; }
-  @keyframes flowRight{ from{ transform:translateX(0);} to{ transform:translateX(60px);} }
+  .out-cell.lit{ border-color: var(--red); }
+  .cell-key{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--label-muted); text-transform:uppercase; margin-bottom:4px; }
+  .cell-val{ font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:600; color:var(--placeholder); }
+  .cell-val.v-num{ color:var(--val-num); } .cell-val.v-str{ color:var(--val-str); } .cell-val.v-bool{ color:var(--val-bool); }
 
-  /* stepper */
-  .stepper-wrap{ position:relative; margin:30px 0 0; padding-top:150px; }
-  .connector-svg{ position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; }
-  .stepper{
-    display:flex; justify-content:space-between; position:relative; z-index:1;
+  /* input panel */
+  #input-panel{
+    background:var(--blue-dim); border-color: rgba(43,108,176,.35);
   }
-  .stepper::before{
-    content:""; position:absolute; left:18px; right:18px; top:15px; height:2px;
-    background:var(--border); z-index:-1;
+  #input-panel .section-label{ color:var(--blue); }
+  #input-panel.active-read{ border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-dim2); }
+  .in-value{
+    text-align:center; padding:6px 4px 2px;
   }
-  .step-node{
-    background:none; border:none; cursor:pointer; display:flex; flex-direction:column;
-    align-items:center; gap:6px; padding:0; width:56px; font-family:inherit; color:var(--text-dim);
+  .in-value .v-main{ font-family:'JetBrains Mono',monospace; font-size:14.5px; font-weight:600; color:var(--text-strong); }
+  .in-value .v-sub{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--blue); text-transform:uppercase; letter-spacing:.08em; margin-top:5px; }
+  .k{ color:var(--label-muted); }
+
+  /* flow panel */
+  .flow-actors{ display:flex; gap:14px; }
+  .flow-actor{ flex:1; min-width:0; }
+  .actor-title{
+    font-family:'JetBrains Mono',monospace; font-size:10.5px; font-weight:700; letter-spacing:.08em;
+    color:var(--label-section-2); text-transform:uppercase; text-align:center; margin-bottom:8px;
   }
-  .node-dot{
-    width:30px; height:30px; border-radius:50%; display:flex; align-items:center; justify-content:center;
-    font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:600;
-    background:var(--panel); border:2px solid var(--border); color:var(--text-dim);
-    transition:all .25s ease;
+  .flow-box{
+    background:var(--card-surface); border:1.5px solid var(--card-border); border-left-width:4px;
+    border-radius:9px; padding:8px 10px; margin-bottom:8px; transition:all .3s ease;
   }
-  .step-node[data-color="blue"] .node-dot{ border-color:var(--blue); }
-  .step-node[data-color="gray"] .node-dot{ border-color:var(--gray); }
-  .step-node[data-color="red"] .node-dot{ border-color:var(--red); }
-  .step-node.done[data-color="blue"] .node-dot{ background:var(--blue); color:#08111f;}
-  .step-node.done[data-color="gray"] .node-dot{ background:var(--gray); color:#0a0c10;}
-  .step-node.done[data-color="red"] .node-dot{ background:var(--red); color:#1a0505;}
-  .step-node.current .node-dot{ transform:scale(1.18); box-shadow:0 0 0 4px var(--panel-2); }
-  .step-node.current[data-color="blue"] .node-dot{ background:var(--blue); color:#08111f; box-shadow:0 0 0 5px var(--blue-dim);}
-  .step-node.current[data-color="gray"] .node-dot{ background:var(--gray); color:#0a0c10; box-shadow:0 0 0 5px var(--gray-dim);}
-  .step-node.current[data-color="red"] .node-dot{ background:var(--red); color:#1a0505; box-shadow:0 0 0 5px var(--red-dim);}
-  .node-label{ font-size:9.5px; text-align:center; line-height:1.2; }
-  .step-node.current .node-label{ color:var(--text); font-weight:600;}
-  .conn-label{ font-family:'JetBrains Mono',monospace; font-size:10.5px; fill:var(--text); }
-  .conn-path{ fill:none; stroke:var(--text-dim); stroke-width:1.4; stroke-dasharray:3 3; }
-  .conn-halo{ fill:var(--panel-2); stroke:var(--border); stroke-width:1; }
+  .flow-box.compute{ border-left-color:var(--gray); }
+  .flow-box.write{ border-left-color:var(--red); }
+  .flow-box.active.compute{ border-color:var(--gray); background:var(--gray-dim2); }
+  .flow-box.active.write{ border-color:var(--red); background:var(--red-dim2); }
+  .flow-box-head{ display:flex; justify-content:space-between; align-items:baseline; gap:6px; font-family:'JetBrains Mono',monospace; font-size:11.5px; }
+  .flow-box-title{ font-weight:600; color:var(--text-strong); }
+  .flow-box-arrow{ color:var(--label-muted); font-size:10.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .flow-box-arrow .fv{ color:var(--text-strong); }
+
+  .struct{ display:flex; align-items:center; gap:5px; margin-top:7px; }
+  .chip{
+    font-family:'JetBrains Mono',monospace; font-size:9.5px; padding:3px 6px; border-radius:5px;
+    background:var(--panel-surface); border:1px solid var(--card-border); color:var(--text-body);
+    white-space:nowrap;
+  }
+  .link{ flex:1; height:0; border-top:2px dotted var(--placeholder); position:relative; min-width:10px; transition:border-color .3s ease, border-style .1s; }
+  .link::after{
+    content:''; position:absolute; right:-1px; top:-4px; border:4px solid transparent;
+    border-left-color:var(--placeholder); transition:border-left-color .3s ease;
+  }
+  .link.solid{ border-top-style:solid; border-top-color:var(--gray); }
+  .link.solid::after{ border-left-color:var(--gray); }
+  .flow-box.write .link.solid{ border-top-color:var(--red); }
+  .flow-box.write .link.solid::after{ border-left-color:var(--red); }
 
   /* caption row */
   .caption-row{
-    margin-top:18px; display:flex; align-items:center; gap:10px;
-    background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:12px 14px;
+    display:flex; align-items:center; gap:10px;
+    background:var(--panel-surface); border:1px solid var(--panel-border); border-radius:10px; padding:12px 14px;
+    margin-top:2px;
   }
-  .caption-text{ font-size:14px; font-weight:600; flex:1; }
+  .caption-text{ font-size:14px; font-weight:600; color:var(--text-body-2); flex:1; }
   .info-btn{
     position:relative; width:20px; height:20px; border-radius:50%; flex:none;
-    background:var(--panel-2); border:1px solid var(--border); color:var(--text-dim);
+    background:var(--card-surface); border:1px solid var(--card-border); color:var(--label-muted);
     font-family:'JetBrains Mono',monospace; font-size:11px; cursor:help; line-height:1;
   }
-  .info-btn:hover, .info-btn:focus-visible{ color:var(--text); border-color:var(--text-dim); outline:none; }
+  .info-btn:hover, .info-btn:focus-visible{ color:var(--text-strong); border-color:var(--label-muted); outline:none; }
   .tooltip{
     display:none; position:absolute; right:0; bottom:calc(100% + 8px); width:260px;
-    background:var(--panel-2); border:1px solid var(--border); border-radius:8px; padding:10px 12px;
-    font-family:'Inter',sans-serif; font-size:12px; line-height:1.5; color:var(--text); font-weight:400;
-    text-align:left; z-index:5; box-shadow:0 8px 24px rgba(0,0,0,.4);
+    background:var(--tooltip-bg); border-radius:8px; padding:10px 12px;
+    font-family:'Inter',sans-serif; font-size:12px; line-height:1.5; color:#ffffff; font-weight:400;
+    text-align:left; z-index:20; box-shadow:0 8px 24px rgba(0,0,0,.25);
   }
   .info-btn:hover .tooltip, .info-btn:focus-visible .tooltip{ display:block; }
 
   /* controls */
-  .controls{
-    margin-top:14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-  }
+  .controls{ margin-top:14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
   .controls button{
-    font-family:'JetBrains Mono',monospace; font-size:12px; background:var(--panel);
-    border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 13px;
-    cursor:pointer; transition:border-color .2s ease, background .2s ease;
+    font-family:'JetBrains Mono',monospace; font-size:12px; background:var(--card-surface);
+    border:1px solid var(--card-border); color:var(--text-strong); border-radius:8px; padding:8px 13px;
+    cursor:pointer; transition:border-color .2s ease;
   }
-  .controls button:hover:not(:disabled){ border-color:var(--text-dim); }
+  .controls button:hover:not(:disabled){ border-color:var(--label-muted); }
   .controls button:disabled{ opacity:.35; cursor:not-allowed; }
   #btn-play{ min-width:80px; }
-  .progress{ font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--text-dim); margin-left:auto; }
+  .progress{ font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--label-muted); margin-left:auto; }
+  .dots{ display:flex; gap:6px; margin-left:8px; }
+  .dot{ width:8px; height:8px; border-radius:50%; border:1.5px solid var(--card-border); background:var(--card-surface); cursor:pointer; padding:0; }
+  .dot.current{ transform:scale(1.3); }
+  .dot[data-color="blue"].done{ background:var(--blue); border-color:var(--blue); }
+  .dot[data-color="gray"].done{ background:var(--gray); border-color:var(--gray); }
+  .dot[data-color="red"].done{ background:var(--red); border-color:var(--red); }
 
-  .summary{
-    margin-top:26px; font-size:13.5px; line-height:1.7; color:var(--text-dim);
-    border-top:1px solid var(--border); padding-top:16px;
-  }
-  .summary strong{ color:var(--text); }
+  .conn-path{ fill:none; stroke:var(--label-muted); stroke-width:1.3; stroke-dasharray:3 3; }
+  .conn-halo{ fill:var(--panel-surface); stroke:var(--panel-border); stroke-width:1; }
+  .conn-label{ font-family:'JetBrains Mono',monospace; font-size:10px; fill:var(--text-body); }
 
-  @media (prefers-reduced-motion: reduce){
-    *{ animation:none !important; transition:none !important; }
-  }
-  @media (max-width:640px){
-    .canvas{ flex-direction:column; }
-    .process-card{ width:100%; }
-    .channel{ flex-direction:row; width:100%; }
-    .trace{ width:2px; height:26px; background:repeating-linear-gradient(180deg, var(--border) 0 6px, transparent 6px 11px);}
-    .node-label{ display:none; }
-    .step-node{ width:32px; }
-  }
+  .summary{ margin-top:22px; font-size:13.5px; line-height:1.7; color:var(--text-body); border-top:1px solid var(--panel-border); padding-top:16px; }
+  .summary strong{ color:var(--text-strong); }
+
+  @media (prefers-reduced-motion: reduce){ *{ animation:none !important; transition:none !important; } }
+  @media (max-width:600px){ .flow-actors{ flex-direction:column; } .out-row{ flex-wrap:wrap; } }
 </style>
 </head>
 <body>
@@ -228,43 +196,69 @@
     <div class="legend-item"><span class="swatch red"></span>Red — Write / critical outcome</div>
   </div>
 
-  <div class="canvas" id="canvas">
-    <div class="process-card">
-      <div class="process-label">Process A — memory</div>
-      <div class="object-box" id="origin-box">
-        <div class="object-title">User</div>
-        <div class="field-row" data-f="id"><span class="fkey">id</span><span class="fval">1</span></div>
-        <div class="field-row" data-f="name"><span class="fkey">name</span><span class="fval">"Ana"</span></div>
-        <div class="field-row" data-f="active"><span class="fkey">active</span><span class="fval">true</span></div>
+  <div class="viz-root" id="viz-root">
+    <svg id="connector-svg"></svg>
+
+    <div class="panel" id="output-panel">
+      <div class="section-label">Output</div>
+      <div class="out-row" id="out-row">
+        <div class="out-cell" data-f="id"><div class="cell-key">id</div><div class="cell-val">—</div></div>
+        <div class="out-cell" data-f="name"><div class="cell-key">name</div><div class="cell-val">—</div></div>
+        <div class="out-cell" data-f="active"><div class="cell-key">active</div><div class="cell-val">—</div></div>
       </div>
     </div>
 
-    <div class="channel" id="channel">
-      <div class="gear" id="gear-s">⚙</div>
-      <div class="trace"><span class="flow-dot"></span></div>
-      <div class="json-capsule" id="json-capsule">
-        <div class="json-label">JSON text</div>
-        <div>{"id":1,"name":"Ana","active":true}</div>
-      </div>
-      <div class="storage">▤ storage / network</div>
-      <div class="trace"><span class="flow-dot"></span></div>
-      <div class="gear" id="gear-d">⚙</div>
-    </div>
-
-    <div class="process-card">
-      <div class="process-label">Process B — memory</div>
-      <div class="object-box" id="dest-box">
-        <div class="object-title">User <span class="new-tag">(new)</span></div>
-        <div class="field-row" data-f="id"><span class="fkey">id</span><span class="fval">—</span></div>
-        <div class="field-row" data-f="name"><span class="fkey">name</span><span class="fval">—</span></div>
-        <div class="field-row" data-f="active"><span class="fkey">active</span><span class="fval">—</span></div>
+    <div class="panel" id="input-panel">
+      <div class="section-label">Input</div>
+      <div class="in-value">
+        <div class="v-main mono" id="in-main"></div>
+        <div class="v-sub" id="in-sub">read</div>
       </div>
     </div>
-  </div>
 
-  <div class="stepper-wrap">
-    <svg class="connector-svg" id="connector-svg"></svg>
-    <div class="stepper" id="stepper"></div>
+    <div class="panel" id="flow-panel">
+      <div class="section-label">Flow</div>
+      <div class="flow-actors">
+        <div class="flow-actor">
+          <div class="actor-title">Serializer</div>
+          <div class="flow-box compute" id="box-2" data-step="2">
+            <div class="flow-box-head"><span class="flow-box-title">Serialize</span><span class="flow-box-arrow">→ <span class="fv">?</span></span></div>
+            <div class="struct">
+              <span class="chip">Object</span>
+              <span class="link" id="link-2"></span>
+              <span class="chip">JSON</span>
+            </div>
+          </div>
+          <div class="flow-box write" id="box-3" data-step="3">
+            <div class="flow-box-head"><span class="flow-box-title">Write</span><span class="flow-box-arrow">→ <span class="fv">?</span></span></div>
+            <div class="struct">
+              <span class="chip">JSON</span>
+              <span class="link" id="link-3"></span>
+              <span class="chip">Storage</span>
+            </div>
+          </div>
+        </div>
+        <div class="flow-actor">
+          <div class="actor-title">Deserializer</div>
+          <div class="flow-box compute" id="box-5" data-step="5">
+            <div class="flow-box-head"><span class="flow-box-title">Deserialize</span><span class="flow-box-arrow">→ <span class="fv">?</span></span></div>
+            <div class="struct">
+              <span class="chip">JSON</span>
+              <span class="link" id="link-5"></span>
+              <span class="chip">Values</span>
+            </div>
+          </div>
+          <div class="flow-box write" id="box-6" data-step="6">
+            <div class="flow-box-head"><span class="flow-box-title">Write</span><span class="flow-box-arrow">→ <span class="fv">?</span></span></div>
+            <div class="struct">
+              <span class="chip">Values</span>
+              <span class="link" id="link-6"></span>
+              <span class="chip">New Object</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="caption-row">
@@ -279,6 +273,7 @@
     <button id="btn-prev">⏮ Prev</button>
     <button id="btn-play">▶ Play</button>
     <button id="btn-next">Next ⏭</button>
+    <div class="dots" id="dots"></div>
     <span class="progress" id="progress-text"></span>
   </div>
 
@@ -286,79 +281,61 @@
 </div>
 
 <script>
-const destValues = { id:'1', name:'"Ana"', active:'true' };
+const objLiteral = (id, name, active) =>
+  `{ <span class="k">id</span>: <span class="v-num">${id}</span>, <span class="k">name</span>: <span class="v-str">"${name}"</span>, <span class="k">active</span>: <span class="v-bool">${active}</span> }`;
+const jsonLiteral = `<span class="v-str">'{"id":1,"name":"Ana","active":true}'</span>`;
 
 const steps = [
-  { color:'blue', label:'Read', caption:'Read object\u2019s fields',
+  { color:'blue', caption:'Read object\u2019s fields',
     tooltip:'An object already lives in a program\u2019s memory — a User with three fields: id, name, active. The serializer walks each field and reads its current value. Reading is non-destructive; it just gathers what will be encoded.',
-    apply:{ originBorder:'blue', originFieldsHL:true, json:false } },
+    input:{ main:objLiteral(1,'Ana','true'), activeRead:true }, flow:null, output:null },
 
-  { color:'gray', label:'Serialize', caption:'Transform → JSON text',
+  { color:'gray', caption:'Transform → JSON text',
     tooltip:'Serialize (verb): convert an in-memory object into a flat, portable format such as JSON, XML, or binary bytes. The three field values are combined into one JSON string. This is a compute step — no data has left the process yet.',
-    apply:{ originBorder:'none', originFieldsHL:false, json:true, jsonBorder:'gray', gearS:true } },
+    input:{ main:objLiteral(1,'Ana','true'), activeRead:false }, flow:{ box:2, value:jsonLiteral, link:'solid' }, output:null },
 
-  { color:'red', label:'Write', caption:'Write JSON to storage',
+  { color:'red', caption:'Write JSON to storage',
     tooltip:'The serialized text is written out — to a file, a database column, or a network socket. This is the critical outcome of serialization: the object\u2019s data now exists outside the original process, as plain bytes.',
-    apply:{ json:true, jsonBorder:'red', flow:'write' } },
+    input:{ main:jsonLiteral, activeRead:false }, flow:{ box:3, value:'written', link:'solid' },
+    output:{ id:'1', name:'"Ana"', active:'true', flash:true } },
 
-  { color:'blue', label:'Read', caption:'Read JSON from storage',
-    tooltip:'On the receiving side — a different process, machine, or just a later moment — something reads those same bytes back in. This mirrors step 2: another read, just on the other end of the wire.',
-    apply:{ json:true, jsonBorder:'blue', flow:'read' } },
+  { color:'blue', caption:'Read JSON from storage',
+    tooltip:'On the receiving side — a different process, machine, or just a later moment — something reads those same bytes back in. This mirrors step 1: another read, just on the other end of the wire.',
+    input:{ main:jsonLiteral, activeRead:true }, flow:null, output:'keep' },
 
-  { color:'gray', label:'Deserialize', caption:'Parse → field values',
+  { color:'gray', caption:'Parse → field values',
     tooltip:'Deserialize (verb): the reverse of serialize. The parser reads the JSON text structurally — keys, colons, commas — and recovers id, name, and active as separate typed values again.',
-    apply:{ json:true, jsonBorder:'gray-dim', gearD:true } },
+    input:{ main:jsonLiteral, activeRead:false }, flow:{ box:5, value:objLiteral(1,'Ana','true'), link:'solid' }, output:'keep' },
 
-  { color:'red', label:'Write', caption:'Write values into new object',
+  { color:'red', caption:'Write values into new object',
     tooltip:'The parsed values are written into a brand-new object the deserializing process just allocated. This is a write — it creates fresh memory, not a reuse of the original object\u2019s memory from step 1.',
-    apply:{ json:true, jsonBorder:'gray-dim', destBorder:'red', destFilled:true, destPulse:true } },
+    input:{ main:objLiteral(1,'Ana','true'), activeRead:false }, flow:{ box:6, value:'written', link:'solid' },
+    output:{ id:'1', name:'"Ana"', active:'true', flash:true } },
 
-  { color:'red', label:'Done', caption:'New object in memory',
+  { color:'red', caption:'New object in memory',
     tooltip:'Deserialization is complete: a second, independent object now exists with the same field values as the original. It\u2019s a copy, not a reference — changing one object later will not affect the other.',
-    apply:{ json:true, jsonBorder:'gray-dim', destBorder:'red', destFilled:true, destPulse:false } },
+    input:{ main:objLiteral(1,'Ana','true'), activeRead:false }, flow:null, output:'keep' },
 ];
 
 const connectors = [
-  { a:1, b:6, label:'fields copied in order' },
-  { a:2, b:5, label:'same JSON format' },
-  { a:1, b:7, label:'same data, new object' },
+  { a:'#box-3', b:'#input-panel', label:'same bytes', revealAt:4, arc:'auto' },
+  { a:'#box-2', b:'#box-5', label:'same JSON format', revealAt:5, arc:'auto' },
+  { a:'#input-panel', b:'#output-panel', label:'same data, new object', revealAt:7, arc:'auto' },
 ];
-connectors.forEach(c => c.revealAt = Math.max(c.a, c.b));
-// assign a vertical lane per connector so labels never overlap — shorter
-// span gets the inner (lower) lane, longer span nests outside it
-connectors.slice().sort((x,y) => Math.abs(x.b-x.a) - Math.abs(y.b-y.a))
-  .forEach((c, i) => c.lane = i);
 
-// ---- build canvas refs ----
-const originBox = document.getElementById('origin-box');
-const destBox = document.getElementById('dest-box');
-const originFields = [...originBox.querySelectorAll('.field-row')];
-const destFields = [...destBox.querySelectorAll('.field-row')];
-const jsonCapsule = document.getElementById('json-capsule');
-const gearS = document.getElementById('gear-s');
-const gearD = document.getElementById('gear-d');
-const channel = document.getElementById('channel');
+// ---- refs ----
+const outputPanel = document.getElementById('output-panel');
+const inputPanel = document.getElementById('input-panel');
+const inMain = document.getElementById('in-main');
+const inSub = document.getElementById('in-sub');
+const flowBoxes = { 2:document.getElementById('box-2'), 3:document.getElementById('box-3'),
+                     5:document.getElementById('box-5'), 6:document.getElementById('box-6') };
+const links = { 2:document.getElementById('link-2'), 3:document.getElementById('link-3'),
+                 5:document.getElementById('link-5'), 6:document.getElementById('link-6') };
 
-// ---- build stepper ----
-const stepperEl = document.getElementById('stepper');
-steps.forEach((s, i) => {
-  const n = i + 1;
-  const btn = document.createElement('button');
-  btn.className = 'step-node';
-  btn.dataset.step = n;
-  btn.dataset.color = s.color;
-  btn.setAttribute('aria-label', `Step ${n}: ${s.caption}`);
-  btn.innerHTML = `<span class="node-dot">${n}</span><span class="node-label">${s.label}</span>`;
-  btn.addEventListener('click', () => { pause(); goTo(n); });
-  stepperEl.appendChild(btn);
-});
-const stepNodes = [...stepperEl.querySelectorAll('.step-node')];
+let lastOutput = null; // remembers committed output values across 'keep' steps
 
-// ---- state ----
-let current = 1;
-let playing = false;
-let timer = null;
-
+let current = 1, playing = false, timer = null;
 const captionEl = document.getElementById('caption-text');
 const tooltipEl = document.getElementById('tooltip-text');
 const progressEl = document.getElementById('progress-text');
@@ -366,92 +343,112 @@ const btnPrev = document.getElementById('btn-prev');
 const btnNext = document.getElementById('btn-next');
 const btnPlay = document.getElementById('btn-play');
 
-function setBorderClass(el, prefix, color){
-  el.classList.remove(prefix+'blue', prefix+'gray', prefix+'red');
-  if(color === 'blue') el.classList.add(prefix+'blue');
-  if(color === 'gray') el.classList.add(prefix+'gray');
-  if(color === 'red') el.classList.add(prefix+'red');
+// dots
+const dotsWrap = document.getElementById('dots');
+steps.forEach((s,i)=>{
+  const n=i+1;
+  const b=document.createElement('button');
+  b.className='dot'; b.dataset.step=n; b.dataset.color=s.color;
+  b.setAttribute('aria-label', `Step ${n}: ${s.caption}`);
+  b.addEventListener('click', ()=>{ pause(); goTo(n); });
+  dotsWrap.appendChild(b);
+});
+const dotEls = [...dotsWrap.querySelectorAll('.dot')];
+
+function typeClass(v){
+  if(v === undefined || v === null) return '';
+  if(v === 'true' || v === 'false') return 'v-bool';
+  if(/^".*"$/.test(v)) return 'v-str';
+  if(/^-?\d+(\.\d+)?$/.test(v)) return 'v-num';
+  return '';
 }
 
 function render(){
-  const cfg = steps[current-1].apply;
+  const s = steps[current-1];
 
-  setBorderClass(originBox, 'b-', cfg.originBorder);
-  originFields.forEach(r => r.classList.toggle('hl-blue', !!cfg.originFieldsHL));
+  // input panel
+  inMain.innerHTML = s.input.main;
+  inputPanel.classList.toggle('active-read', !!s.input.activeRead);
 
-  jsonCapsule.classList.toggle('visible', !!cfg.json);
-  jsonCapsule.classList.toggle('dim', cfg.jsonBorder === 'gray-dim');
-  setBorderClass(jsonCapsule, 'b-', cfg.jsonBorder === 'gray-dim' ? 'gray' : cfg.jsonBorder);
+  // flow panel: reset all boxes to inert, then apply state for boxes at/behind current
+  Object.entries(flowBoxes).forEach(([n, el])=>{
+    n = +n;
+    el.classList.remove('active');
+    const fv = el.querySelector('.fv');
+    if(current >= n){
+      // find the value this box committed when it was reached
+      const owningStep = steps[n-1];
+      fv.textContent = owningStep.flow ? owningStep.flow.value.replace(/<[^>]+>/g,'').slice(0,18) : '?';
+      links[n].classList.add('solid');
+    } else {
+      fv.textContent = '?';
+      links[n].classList.remove('solid');
+    }
+  });
+  if(s.flow){ flowBoxes[s.flow.box].classList.add('active'); }
 
-  gearS.classList.toggle('active', !!cfg.gearS);
-  gearD.classList.toggle('active', !!cfg.gearD);
-
-  channel.classList.toggle('flow-write', cfg.flow === 'write');
-  channel.classList.toggle('flow-read', cfg.flow === 'read');
-
-  setBorderClass(destBox, 'b-', cfg.destBorder);
-  destFields.forEach(r => {
-    const f = r.dataset.f;
-    r.querySelector('.fval').textContent = cfg.destFilled ? destValues[f] : '—';
-    r.classList.toggle('hl-red', !!cfg.destPulse);
+  // output panel
+  if(s.output && s.output !== 'keep'){ lastOutput = s.output; }
+  outputPanel.classList.toggle('tint-red', !!lastOutput);
+  outputPanel.classList.remove('flash');
+  if(s.output && s.output !== 'keep'){ void outputPanel.offsetWidth; outputPanel.classList.add('flash'); }
+  ['id','name','active'].forEach(f=>{
+    const cell = outputPanel.querySelector(`.out-cell[data-f="${f}"] .cell-val`);
+    const cellBox = outputPanel.querySelector(`.out-cell[data-f="${f}"]`);
+    if(lastOutput){
+      cell.textContent = lastOutput[f];
+      cell.className = 'cell-val ' + typeClass(lastOutput[f]);
+      cellBox.classList.add('lit');
+    } else {
+      cell.textContent = '—';
+      cell.className = 'cell-val';
+      cellBox.classList.remove('lit');
+    }
   });
 
-  stepNodes.forEach(node => {
-    const n = +node.dataset.step;
-    node.classList.toggle('current', n === current);
-    node.classList.toggle('done', n < current);
-  });
-
-  captionEl.textContent = steps[current-1].caption;
-  tooltipEl.textContent = steps[current-1].tooltip;
+  // caption / tooltip / controls
+  captionEl.textContent = s.caption;
+  tooltipEl.textContent = s.tooltip;
   progressEl.textContent = `Step ${current} / ${steps.length}`;
   btnPrev.disabled = current === 1;
   btnNext.disabled = current === steps.length;
+  dotEls.forEach(d=>{
+    const n = +d.dataset.step;
+    d.classList.toggle('current', n===current);
+    d.classList.toggle('done', n<=current);
+  });
 
   drawConnectors();
 }
 
-function goTo(n){
-  current = Math.max(1, Math.min(steps.length, n));
-  render();
-}
-function next(){
-  if(current >= steps.length){ pause(); return; }
-  goTo(current+1);
-}
+function goTo(n){ current = Math.max(1, Math.min(steps.length, n)); render(); }
+function next(){ if(current>=steps.length){ pause(); return; } goTo(current+1); }
 function prev(){ goTo(current-1); }
-
 function play(){
-  if(current >= steps.length) goTo(1);
-  playing = true;
-  btnPlay.textContent = '⏸ Pause';
-  timer = setInterval(() => {
-    if(current >= steps.length){ pause(); return; }
-    next();
-  }, 1600);
+  if(current>=steps.length) goTo(1);
+  playing = true; btnPlay.textContent = '⏸ Pause';
+  timer = setInterval(()=>{ if(current>=steps.length){ pause(); return; } next(); }, 1700);
 }
-function pause(){
-  playing = false;
-  btnPlay.textContent = '▶ Play';
-  clearInterval(timer);
-}
+function pause(){ playing=false; btnPlay.textContent='▶ Play'; clearInterval(timer); }
 
-btnPrev.addEventListener('click', () => { pause(); prev(); });
-btnNext.addEventListener('click', () => { pause(); next(); });
-btnPlay.addEventListener('click', () => { playing ? pause() : play(); });
+btnPrev.addEventListener('click', ()=>{ pause(); prev(); });
+btnNext.addEventListener('click', ()=>{ pause(); next(); });
+btnPlay.addEventListener('click', ()=> playing ? pause() : play());
+document.addEventListener('keydown', e=>{
+  if(e.key==='ArrowRight'){ pause(); next(); }
+  if(e.key==='ArrowLeft'){ pause(); prev(); }
+});
 
-// ---- connectors (dynamic, position-based) ----
+// ---- connectors: computed dynamically from real element positions ----
 const svg = document.getElementById('connector-svg');
 const svgNS = 'http://www.w3.org/2000/svg';
+const root = document.getElementById('viz-root');
 
-function wrapLabel(text, maxLen = 24){
-  const words = text.split(' ');
-  const lines = [];
-  let line = '';
-  words.forEach(w => {
-    const trial = line ? line + ' ' + w : w;
-    if(trial.length > maxLen){ lines.push(line); line = w; }
-    else { line = trial; }
+function wrapLabel(text, maxLen=22){
+  const words = text.split(' '); const lines=[]; let line='';
+  words.forEach(w=>{
+    const trial = line ? line+' '+w : w;
+    if(trial.length > maxLen){ lines.push(line); line=w; } else { line = trial; }
   });
   if(line) lines.push(line);
   return lines;
@@ -459,85 +456,53 @@ function wrapLabel(text, maxLen = 24){
 
 function drawConnectors(){
   svg.innerHTML = '';
-  const containerRect = svg.parentElement.getBoundingClientRect();
+  const cRect = root.getBoundingClientRect();
+  const revealed = connectors.filter(c=>c.revealAt<=current).sort((a,b)=>b.revealAt-a.revealAt);
 
-  const revealed = connectors
-    .filter(c => c.revealAt <= current)
-    .sort((a,b) => b.revealAt - a.revealAt);
-
-  revealed.forEach((c, idx) => {
-    const opacity = idx === 0 ? 1 : (idx === 1 ? 0.5 : 0.25);
-    const elA = stepperEl.querySelector(`.step-node[data-step="${c.a}"] .node-dot`);
-    const elB = stepperEl.querySelector(`.step-node[data-step="${c.b}"] .node-dot`);
+  revealed.forEach((c, idx)=>{
+    const opacity = idx===0 ? 1 : (idx===1 ? 0.5 : 0.25);
+    const elA = document.querySelector(c.a), elB = document.querySelector(c.b);
     if(!elA || !elB) return;
-    const rA = elA.getBoundingClientRect();
-    const rB = elB.getBoundingClientRect();
+    const rA = elA.getBoundingClientRect(), rB = elB.getBoundingClientRect();
+    const x1 = rA.left + rA.width/2 - cRect.left, y1 = rA.top + rA.height/2 - cRect.top;
+    const x2 = rB.left + rB.width/2 - cRect.left, y2 = rB.top + rB.height/2 - cRect.top;
+    const dx = x2-x1, dy = y2-y1;
+    let cx, cy;
+    if(Math.abs(dx) > Math.abs(dy)){ cx=(x1+x2)/2; cy=Math.min(y1,y2) - 34; }
+    else { cx=Math.max(x1,x2) + 90; cy=(y1+y2)/2; }
 
-    const x1 = rA.left + rA.width/2 - containerRect.left;
-    const y1 = rA.top - containerRect.top;
-    const x2 = rB.left + rB.width/2 - containerRect.left;
-    const y2 = rB.top - containerRect.top;
-
-    const arc = 34 + c.lane * 46;
-    const cx = (x1 + x2) / 2;
-    const cy = Math.min(y1, y2) - arc;
-
-    const path = document.createElementNS(svgNS, 'path');
+    const path = document.createElementNS(svgNS,'path');
     path.setAttribute('d', `M ${x1},${y1} Q ${cx},${cy} ${x2},${y2}`);
-    path.setAttribute('class', 'conn-path');
-    path.style.opacity = opacity;
+    path.setAttribute('class','conn-path'); path.style.opacity = opacity;
     svg.appendChild(path);
 
-    // midpoint of quadratic bezier at t=0.5
     const midX = 0.25*x1 + 0.5*cx + 0.25*x2;
     const midY = 0.25*y1 + 0.5*cy + 0.25*y2;
-
     const lines = wrapLabel(c.label);
-    const lineHeight = 11;
-    const group = document.createElementNS(svgNS, 'g');
-    group.style.opacity = opacity;
+    const lh = 12;
+    const startY = midY - (lines.length*lh)/2 + lh - 3;
 
-    const totalH = lines.length * lineHeight;
-    const startY = midY - totalH/2 + lineHeight - 3;
-
-    const textEl = document.createElementNS(svgNS, 'text');
-    textEl.setAttribute('class', 'conn-label');
-    textEl.setAttribute('x', midX);
-    textEl.setAttribute('text-anchor', 'middle');
-    lines.forEach((ln, i) => {
-      const tspan = document.createElementNS(svgNS, 'tspan');
-      tspan.setAttribute('x', midX);
-      tspan.setAttribute('y', startY + i*lineHeight);
-      tspan.textContent = ln;
+    const group = document.createElementNS(svgNS,'g'); group.style.opacity = opacity;
+    const textEl = document.createElementNS(svgNS,'text');
+    textEl.setAttribute('class','conn-label'); textEl.setAttribute('x', midX); textEl.setAttribute('text-anchor','middle');
+    lines.forEach((ln,i)=>{
+      const tspan = document.createElementNS(svgNS,'tspan');
+      tspan.setAttribute('x', midX); tspan.setAttribute('y', startY + i*lh); tspan.textContent = ln;
       textEl.appendChild(tspan);
     });
+    group.appendChild(textEl); svg.appendChild(group);
 
-    group.appendChild(textEl);
-    svg.appendChild(group);
-
-    // halo behind text, sized from measured bbox
     const bbox = textEl.getBBox();
-    const halo = document.createElementNS(svgNS, 'rect');
-    halo.setAttribute('class', 'conn-halo');
-    halo.setAttribute('x', bbox.x - 4);
-    halo.setAttribute('y', bbox.y - 2);
-    halo.setAttribute('width', bbox.width + 8);
-    halo.setAttribute('height', bbox.height + 4);
-    halo.setAttribute('rx', 3);
-    halo.style.opacity = Math.max(0.88, opacity);
+    const halo = document.createElementNS(svgNS,'rect');
+    halo.setAttribute('class','conn-halo');
+    halo.setAttribute('x', bbox.x-4); halo.setAttribute('y', bbox.y-2);
+    halo.setAttribute('width', bbox.width+8); halo.setAttribute('height', bbox.height+4);
+    halo.setAttribute('rx', 3); halo.style.opacity = Math.max(0.9, opacity);
     group.insertBefore(halo, textEl);
   });
 }
-
 window.addEventListener('resize', drawConnectors);
 
-// keyboard navigation
-document.addEventListener('keydown', (e) => {
-  if(e.key === 'ArrowRight'){ pause(); next(); }
-  if(e.key === 'ArrowLeft'){ pause(); prev(); }
-});
-
-// ---- summary text ----
 document.getElementById('summary').innerHTML =
   `<strong>The idea:</strong> serialization flattens an in-memory object into a portable, linear format (here, a JSON string) so it can be written to disk, sent over a network, or cached; deserialization reverses the process, parsing that text back into a brand-new object with the same field values. ` +
   `The two objects are separate copies, not shared references — the round trip preserves <em>data</em>, not <em>identity</em>. ` +
