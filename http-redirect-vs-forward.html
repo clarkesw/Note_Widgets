@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>StepViz — HTTP Redirect vs Forward</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --page-bg:#ffffff;
+    --panel-surface:#f7f8fa;
+    --panel-border:#e5e7eb;
+    --card-surface:#ffffff;
+    --card-border:#e2e5ea;
+    --text-strong:#1a1a1a;
+    --text-body:#444444;
+    --text-body-2:#222222;
+    --label-muted:#6b7280;
+    --label-section:#8a93a3;
+    --label-section-2:#9aa1ad;
+    --placeholder:#c3c8d1;
+    --tooltip-bg:#2d3748;
+    --val-num:#0969da;
+    --val-str:#c2410c;
+    --val-bool:#8250df;
+
+    --blue:#2b6cb0;   --blue-dim: rgba(43,108,176,.08);   --blue-dim2: rgba(43,108,176,.16);
+    --gray:#718096;   --gray-dim: rgba(113,128,150,.08);  --gray-dim2: rgba(113,128,150,.16);
+    --red:#c53030;    --red-dim: rgba(197,48,48,.08);     --red-dim2: rgba(197,48,48,.16);
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; background:var(--page-bg); color:var(--text-body-2);
+    font-family:'Inter',system-ui,sans-serif; padding:28px 16px 48px;
+    display:flex; justify-content:center;
+  }
+  .wrap{ width:100%; max-width:780px; }
+  .mono{ font-family:'JetBrains Mono',monospace; }
+
+  header{ margin-bottom:14px; }
+  .eyebrow{
+    font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:.12em;
+    color:var(--label-section); text-transform:uppercase; margin:0 0 6px;
+  }
+  h1{ font-size:21px; margin:0 0 4px; font-weight:700; color:var(--text-strong); letter-spacing:-.01em; }
+  .variant-note{ font-size:13px; color:var(--label-muted); margin:0; }
+  .variant-note code{ font-family:'JetBrains Mono',monospace; background:var(--panel-surface); border:1px solid var(--panel-border); padding:1px 5px; border-radius:4px; }
+
+  /* tabs */
+  .tabs{ display:flex; gap:8px; margin:16px 0 14px; }
+  .tab-btn{
+    font-family:'JetBrains Mono',monospace; font-size:12.5px; font-weight:600;
+    background:var(--card-surface); border:1.5px solid var(--card-border); color:var(--label-muted);
+    border-radius:9px; padding:9px 15px; cursor:pointer; transition:all .2s ease;
+  }
+  .tab-btn:hover{ border-color:var(--label-muted); }
+  .tab-btn.active{ background:var(--text-strong); border-color:var(--text-strong); color:#fff; }
+
+  /* legend pill */
+  .legend{
+    display:flex; flex-wrap:wrap; gap:14px; margin:0 0 20px;
+    background:var(--panel-surface); border:1px solid var(--panel-border); border-radius:12px;
+    padding:9px 14px;
+  }
+  .legend-item{ display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--text-body); }
+  .swatch{ width:10px; height:10px; border-radius:3px; display:inline-block; flex:none; }
+  .swatch.blue{ background:var(--blue);} .swatch.gray{ background:var(--gray);} .swatch.red{ background:var(--red);}
+
+  /* shared panel chrome */
+  .viz-root{ position:relative; }
+  #connector-svg{ position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; z-index:2; }
+  .panel{
+    background:var(--panel-surface); border:1.5px solid var(--panel-border); border-radius:14px;
+    padding:14px 16px 16px; margin-bottom:14px; position:relative; transition:border-color .35s ease, background .35s ease;
+  }
+  .section-label{
+    font-family:'JetBrains Mono',monospace; font-size:10.5px; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--label-section); margin-bottom:10px;
+  }
+
+  /* output panel — single value */
+  #output-panel.tint-red{ border-color: rgba(197,48,48,.45); background: linear-gradient(var(--red-dim), var(--red-dim)), var(--panel-surface); }
+  #output-panel.flash{ animation: pulseRed .7s ease; }
+  @keyframes pulseRed{ 0%{ box-shadow:0 0 0 0 rgba(197,48,48,.35);} 100%{ box-shadow:0 0 0 10px rgba(197,48,48,0);} }
+  .out-value{ text-align:center; padding:8px 4px 4px; }
+  .out-value .v-main{ font-family:'JetBrains Mono',monospace; font-size:19px; font-weight:700; color:var(--text-strong); }
+  .out-value .v-sub{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--red); text-transform:uppercase; letter-spacing:.08em; margin-top:6px; }
+  #output-panel:not(.tint-red) .v-sub{ color:var(--placeholder); }
+
+  /* input panel */
+  #input-panel{ background:var(--blue-dim); border-color: rgba(43,108,176,.35); }
+  #input-panel .section-label{ color:var(--blue); }
+  #input-panel.active-read{ border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-dim2); }
+  .in-value{ text-align:center; padding:6px 4px 2px; }
+  .in-value .v-main{ font-family:'JetBrains Mono',monospace; font-size:14.5px; font-weight:600; color:var(--text-strong); }
+  .in-value .v-sub{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--blue); text-transform:uppercase; letter-spacing:.08em; margin-top:5px; }
+  .k{ color:var(--label-muted); }
+  .v-num{ color:var(--val-num); } .v-str{ color:var(--val-str); } .v-bool{ color:var(--val-bool); }
+
+  /* flow panel */
+  .flow-actors{ display:flex; gap:14px; align-items:flex-start; }
+  .flow-actor{ flex:1; min-width:0; }
+  .actor-title{
+    font-family:'JetBrains Mono',monospace; font-size:10.5px; font-weight:700; letter-spacing:.08em;
+    color:var(--label-section-2); text-transform:uppercase; text-align:center; margin-bottom:8px;
+  }
+  .flow-box{
+    background:var(--card-surface); border:1.5px solid var(--card-border); border-left-width:4px;
+    border-radius:9px; padding:8px 10px; margin-bottom:8px; transition:all .3s ease;
+  }
+  .flow-box.compute{ border-left-color:var(--gray); }
+  .flow-box.write{ border-left-color:var(--red); }
+  .flow-box.active.compute{ border-color:var(--gray); background:var(--gray-dim2); }
+  .flow-box.active.write{ border-color:var(--red); background:var(--red-dim2); }
+  .flow-box-head{ display:flex; justify-content:space-between; align-items:baseline; gap:6px; font-family:'JetBrains Mono',monospace; font-size:11.5px; }
+  .flow-box-title{ font-weight:600; color:var(--text-strong); }
+  .flow-box-arrow{ color:var(--label-muted); font-size:10.5px; white-space:nowrap; }
+  .flow-box-arrow .fv{ color:var(--text-strong); }
+
+  .struct{ display:flex; align-items:center; gap:5px; margin-top:7px; }
+  .chip{
+    font-family:'JetBrains Mono',monospace; font-size:9.5px; padding:3px 6px; border-radius:5px;
+    background:var(--panel-surface); border:1px solid var(--card-border); color:var(--text-body);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:44%;
+  }
+  .link{ flex:1; height:0; border-top:2px dotted var(--placeholder); position:relative; min-width:10px; transition:border-color .3s ease, border-style .1s; }
+  .link::after{
+    content:''; position:absolute; right:-1px; top:-4px; border:4px solid transparent;
+    border-left-color:var(--placeholder); transition:border-left-color .3s ease;
+  }
+  .link.solid{ border-top-style:solid; border-top-color:var(--gray); }
+  .link.solid::after{ border-left-color:var(--gray); }
+  .flow-box.write .link.solid{ border-top-color:var(--red); }
+  .flow-box.write .link.solid::after{ border-left-color:var(--red); }
+  .side-note{ font-size:9px; font-style:italic; margin-top:4px; text-align:center; }
+  .side-note.commit{ color:var(--red); font-weight:600; }
+  .side-note.no-commit{ color:var(--label-muted); }
+
+  /* caption row */
+  .caption-row{
+    display:flex; align-items:center; gap:10px;
+    background:var(--panel-surface); border:1px solid var(--panel-border); border-radius:10px; padding:12px 14px;
+    margin-top:2px;
+  }
+  .caption-text{ font-size:14px; font-weight:600; color:var(--text-body-2); flex:1; }
+  .info-btn{
+    position:relative; width:20px; height:20px; border-radius:50%; flex:none;
+    background:var(--card-surface); border:1px solid var(--card-border); color:var(--label-muted);
+    font-family:'JetBrains Mono',monospace; font-size:11px; cursor:help; line-height:1;
+  }
+  .info-btn:hover, .info-btn:focus-visible{ color:var(--text-strong); border-color:var(--label-muted); outline:none; }
+  .tooltip{
+    display:none; position:absolute; right:0; bottom:calc(100% + 8px); width:270px;
+    background:var(--tooltip-bg); border-radius:8px; padding:10px 12px;
+    font-family:'Inter',sans-serif; font-size:12px; line-height:1.5; color:#ffffff; font-weight:400;
+    text-align:left; z-index:20; box-shadow:0 8px 24px rgba(0,0,0,.25);
+  }
+  .info-btn:hover .tooltip, .info-btn:focus-visible .tooltip{ display:block; }
+
+  /* controls */
+  .controls{ margin-top:14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .controls button{
+    font-family:'JetBrains Mono',monospace; font-size:12px; background:var(--card-surface);
+    border:1px solid var(--card-border); color:var(--text-strong); border-radius:8px; padding:8px 13px;
+    cursor:pointer; transition:border-color .2s ease;
+  }
+  .controls button:hover:not(:disabled){ border-color:var(--label-muted); }
+  .controls button:disabled{ opacity:.35; cursor:not-allowed; }
+  #btn-play{ min-width:80px; }
+  .progress{ font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--label-muted); margin-left:auto; }
+  .dots{ display:flex; gap:6px; margin-left:8px; }
+  .dot{ width:8px; height:8px; border-radius:50%; border:1.5px solid var(--card-border); background:var(--card-surface); cursor:pointer; padding:0; }
+  .dot.current{ transform:scale(1.3); }
+  .dot[data-color="blue"].done{ background:var(--blue); border-color:var(--blue); }
+  .dot[data-color="gray"].done{ background:var(--gray); border-color:var(--gray); }
+  .dot[data-color="red"].done{ background:var(--red); border-color:var(--red); }
+
+  .conn-path{ fill:none; stroke:var(--label-muted); stroke-width:1.3; stroke-dasharray:3 3; }
+  .conn-halo{ fill:var(--panel-surface); stroke:var(--panel-border); stroke-width:1; }
+  .conn-label{ font-family:'JetBrains Mono',monospace; font-size:10px; fill:var(--text-body); }
+
+  .summary{ margin-top:22px; font-size:13.5px; line-height:1.7; color:var(--text-body); border-top:1px solid var(--panel-border); padding-top:16px; }
+  .summary strong{ color:var(--text-strong); }
+
+  @media (prefers-reduced-motion: reduce){ *{ animation:none !important; transition:none !important; } }
+  @media (max-width:600px){ .flow-actors{ flex-direction:column; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">StepViz · Web fundamentals</p>
+    <h1>HTTP Redirect vs. Forward</h1>
+    <p class="variant-note">Variant shown: the most commonly taught contrast — a client-visible <code>302</code> redirect vs. a server-side (e.g. servlet-style) internal forward.</p>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button class="tab-btn active" data-tab="redirect" role="tab">Redirect (302)</button>
+    <button class="tab-btn" data-tab="forward" role="tab">Forward</button>
+  </div>
+
+  <div class="legend" aria-label="Color legend">
+    <div class="legend-item"><span class="swatch blue"></span>Blue — Read / input</div>
+    <div class="legend-item"><span class="swatch gray"></span>Gray — Compute / transform</div>
+    <div class="legend-item"><span class="swatch red"></span>Red — Write / critical outcome</div>
+  </div>
+
+  <div class="viz-root" id="viz-root">
+    <svg id="connector-svg"></svg>
+
+    <div class="panel" id="output-panel">
+      <div class="section-label">Output</div>
+      <div class="out-value">
+        <div class="v-main mono" id="out-main">—</div>
+        <div class="v-sub" id="out-sub">address</div>
+      </div>
+    </div>
+
+    <div class="panel" id="input-panel">
+      <div class="section-label">Input</div>
+      <div class="in-value">
+        <div class="v-main mono" id="in-main"></div>
+        <div class="v-sub" id="in-sub">read</div>
+      </div>
+    </div>
+
+    <div class="panel" id="flow-panel">
+      <div class="section-label">Flow</div>
+      <div class="flow-actors" id="flow-actors"></div>
+    </div>
+  </div>
+
+  <div class="caption-row">
+    <span class="caption-text" id="caption-text"></span>
+    <button class="info-btn" id="info-btn" aria-label="More info about this step" tabindex="0">
+      ?
+      <span class="tooltip" id="tooltip-text"></span>
+    </button>
+  </div>
+
+  <div class="controls">
+    <button id="btn-prev">⏮ Prev</button>
+    <button id="btn-play">▶ Play</button>
+    <button id="btn-next">Next ⏭</button>
+    <div class="dots" id="dots"></div>
+    <span class="progress" id="progress-text"></span>
+  </div>
+
+  <div class="summary" id="summary"></div>
+</div>
+
+<script>
+const path = p => `<span class="v-str">${p}</span>`;
+const status = (c,t) => `<span class="v-num">${c}</span> <span class="k">${t}</span>`;
+const req = (m,p) => `<span class="k">${m}</span> ${path(p)}`;
+
+const TABS = {
+  redirect: {
+    label:'Redirect (302)',
+    actors:['CLIENT','SERVER'],
+    summary:`<strong>The idea:</strong> a redirect is a client-visible instruction — the server replies with a <code>3xx</code> status and a Location header, and the browser then issues a brand-new, independent HTTP request. `+
+      `The address bar updates because the client itself performs that second request. `+
+      `<strong>Cost:</strong> always two full round trips. `+
+      `<strong>Real-world use:</strong> redirecting <code>http://</code> to <code>https://</code>, or sending users to a login page and back after they've moved a page permanently (<code>301</code>) or temporarily (<code>302</code>).`,
+    steps:[
+      { color:'blue', caption:'Read request to send',
+        tooltip:'Before anything is sent, the browser already has a request ready to go — a GET for /old, prepared from what the user typed or clicked. Nothing has happened yet; this is just what\u2019s about to happen.',
+        input:{ main:req('GET','/old'), activeRead:true }, output:'keep', flow:null },
+
+      { color:'red', caption:'Send GET /old',
+        tooltip:'The browser sends the HTTP request for /old. This is a write — the client is emitting bytes onto the network — and it\u2019s what puts /old in the address bar in the first place.',
+        input:{ main:req('GET','/old'), activeRead:false }, output:{ value:'/old', commit:true },
+        flow:{ step:2, actor:'CLIENT', type:'write', title:'Send Request', chips:['Client','GET /old'], result:'sent', note:'↑ commits address bar' } },
+
+      { color:'blue', caption:'Server receives request',
+        tooltip:'The server reads the incoming request for /old off the socket. Reading doesn\u2019t change anything yet — it\u2019s just the server taking in what the client sent.',
+        input:{ main:req('GET','/old'), activeRead:true }, output:'keep', flow:null },
+
+      { color:'gray', caption:'Decide: redirect needed',
+        tooltip:'The server looks up /old and decides the resource actually lives at /new. This is a compute step: it settles on a 302 status and a Location header, but hasn\u2019t sent a byte back yet.',
+        input:{ main:req('GET','/old'), activeRead:false }, output:'keep',
+        flow:{ step:4, actor:'SERVER', type:'compute', title:'Decide Route', chips:['GET /old','302 → /new'], result:'302 chosen' } },
+
+      { color:'red', caption:'Send 302 + Location',
+        tooltip:'The server writes its response: HTTP 302 Found, with a Location header pointing to /new. This is a critical outward action — but notice the address bar hasn\u2019t changed yet. The client still has to act on it.',
+        input:{ main:req('GET','/old'), activeRead:false }, output:'keep',
+        flow:{ step:5, actor:'SERVER', type:'write', title:'Send Response', chips:['302 Found','Location: /new'], result:'302 sent', note:'no address-bar change yet' } },
+
+      { color:'blue', caption:'Client receives 302',
+        tooltip:'The browser reads the 302 response and its Location header. So far this is just information the client has received — not yet acted on.',
+        input:{ main:status(302,'Found') + ' · Location: ' + path('/new'), activeRead:true }, output:'keep', flow:null },
+
+      { color:'gray', caption:'Parse Location header',
+        tooltip:'The browser parses the Location header and prepares a brand-new HTTP request for /new. This is a compute step — building the next request, not sending it yet.',
+        input:{ main:status(302,'Found') + ' · Location: ' + path('/new'), activeRead:false }, output:'keep',
+        flow:{ step:7, actor:'CLIENT', type:'compute', title:'Parse Location', chips:['Location: /new','GET /new'], result:'ready' } },
+
+      { color:'red', caption:'Send GET /new',
+        tooltip:'The browser sends a second, independent HTTP request — this time for /new. This is the moment the address bar actually updates. A redirect always costs a full extra round trip.',
+        input:{ main:req('GET','/new'), activeRead:false }, output:{ value:'/new', commit:true },
+        flow:{ step:8, actor:'CLIENT', type:'write', title:'Send Request', chips:['Client','GET /new'], result:'sent', note:'↑ commits address bar' } },
+
+      { color:'red', caption:'Done — 2 round trips, URL changed',
+        tooltip:'The browser now shows /new in the address bar, reflecting two full request/response cycles. This is the defining trait of a redirect: the client is always aware of, and in control of, the navigation.',
+        input:{ main:req('GET','/new'), activeRead:false }, output:'keep', flow:null },
+    ],
+    connectors:[
+      { a:'#box-2', b:'#box-8', label:'2nd request, new URL', revealAt:8 },
+      { a:'#box-5', b:'#input-panel', label:'same Location header', revealAt:6 },
+      { a:'#output-panel', b:'#box-8', label:'commits new URL', revealAt:8 },
+    ],
+  },
+
+  forward: {
+    label:'Forward',
+    actors:['CLIENT','SERVER'],
+    summary:`<strong>The idea:</strong> a forward happens entirely on the server — it hands the same request off to another handler internally and sends back one response. `+
+      `The client never learns a forward happened, so the address bar never changes, even though the content came from somewhere else. `+
+      `<strong>Cost:</strong> a single round trip. `+
+      `<strong>Real-world use:</strong> a Java servlet's <code>RequestDispatcher.forward()</code>, or an MVC framework internally routing <code>/checkout</code> to an error page after validation fails, without exposing that URL to the user.`,
+    steps:[
+      { color:'blue', caption:'Read request to send',
+        tooltip:'Before anything is sent, the browser already has a request ready to go — a GET for /old, prepared from what the user typed or clicked. Nothing has happened yet; this is just what\u2019s about to happen.',
+        input:{ main:req('GET','/old'), activeRead:true }, output:'keep', flow:null },
+
+      { color:'red', caption:'Send GET /old',
+        tooltip:'The browser sends the request for /old — the only outward action the client ever takes in this flow. This write is what sets the address bar to /old.',
+        input:{ main:req('GET','/old'), activeRead:false }, output:{ value:'/old', commit:true },
+        flow:{ step:2, actor:'CLIENT', type:'write', title:'Send Request', chips:['Client','GET /old'], result:'sent', note:'↑ commits address bar' } },
+
+      { color:'blue', caption:'Server receives request',
+        tooltip:'The server reads the incoming request for /old. From here on, everything happens inside the server — the client won\u2019t hear back until a single final response.',
+        input:{ main:req('GET','/old'), activeRead:true }, output:'keep', flow:null },
+
+      { color:'gray', caption:'Resolve internal target',
+        tooltip:'The server determines that /old\u2019s logic actually lives at /new, and decides to hand the request off there instead — without telling the client. This is a compute step.',
+        input:{ main:req('GET','/old'), activeRead:false }, output:'keep',
+        flow:{ step:4, actor:'SERVER', type:'compute', title:'Resolve Target', chips:['GET /old','/new handler'], result:'resolved' } },
+
+      { color:'red', caption:'Forward internally to /new',
+        tooltip:'The server hands the very same request (and response) object to the /new handler, entirely inside the server process. No network hop happens here — that\u2019s what makes a forward invisible to the client, unlike a redirect\u2019s "Send 302" step, which does cross back to the browser.',
+        input:{ main:req('GET','/old'), activeRead:false }, output:'keep',
+        flow:{ step:5, actor:'SERVER', type:'write', title:'Forward Internally', chips:['Request','/new handler'], result:'forwarded', note:'internal — no network hop, no address-bar change' } },
+
+      { color:'red', caption:'Send final response',
+        tooltip:'The server sends one HTTP response back — built by /new\u2019s logic, but still tied to the original request. Notice: the address bar still hasn\u2019t changed. The client only ever sees one request and one response.',
+        input:{ main:req('GET','/old'), activeRead:false }, output:'keep',
+        flow:{ step:6, actor:'SERVER', type:'write', title:'Send Response', chips:['200 OK','body: /new'], result:'sent', note:'no address-bar change' } },
+
+      { color:'blue', caption:'Client receives response',
+        tooltip:'The browser reads the response — content from /new — with no idea a forward happened internally. As far as the client is concerned, /old simply answered directly.',
+        input:{ main:status(200,'OK') + ' · body from ' + path('/new'), activeRead:true }, output:'keep', flow:null },
+
+      { color:'red', caption:'Done — 1 round trip, URL unchanged',
+        tooltip:'The address bar still reads /old, even though the content came from /new. This is the defining trait of a server-side forward: it\u2019s invisible to the client and costs only a single round trip.',
+        input:{ main:status(200,'OK') + ' · body from ' + path('/new'), activeRead:false }, output:'keep', flow:null },
+    ],
+    connectors:[
+      { a:'#box-5', b:'#box-6', label:'same request, reused', revealAt:6 },
+      { a:'#output-panel', b:'#box-6', label:'URL unchanged', revealAt:6 },
+    ],
+  },
+};
+
+// ---- state ----
+let activeTabKey = 'redirect';
+let current = 1, playing = false, timer = null;
+
+const outMain = document.getElementById('out-main');
+const outSub = document.getElementById('out-sub');
+const outputPanel = document.getElementById('output-panel');
+const inputPanel = document.getElementById('input-panel');
+const inMain = document.getElementById('in-main');
+const flowActorsEl = document.getElementById('flow-actors');
+const captionEl = document.getElementById('caption-text');
+const tooltipEl = document.getElementById('tooltip-text');
+const progressEl = document.getElementById('progress-text');
+const btnPrev = document.getElementById('btn-prev');
+const btnNext = document.getElementById('btn-next');
+const btnPlay = document.getElementById('btn-play');
+const dotsWrap = document.getElementById('dots');
+const summaryEl = document.getElementById('summary');
+
+let lastOutput = null;
+
+function buildFlowPanel(tab){
+  flowActorsEl.innerHTML = '';
+  tab.actors.forEach(actorName=>{
+    const col = document.createElement('div');
+    col.className = 'flow-actor';
+    const title = document.createElement('div');
+    title.className = 'actor-title'; title.textContent = actorName;
+    col.appendChild(title);
+    tab.steps.forEach((s,i)=>{
+      if(!s.flow || s.flow.actor !== actorName) return;
+      const n = i+1;
+      const box = document.createElement('div');
+      box.className = `flow-box ${s.flow.type}`;
+      box.id = `box-${n}`;
+      box.dataset.step = n;
+      box.innerHTML = `
+        <div class="flow-box-head"><span class="flow-box-title">${s.flow.title}</span><span class="flow-box-arrow">→ <span class="fv">?</span></span></div>
+        <div class="struct">
+          <span class="chip">${s.flow.chips[0]}</span>
+          <span class="link"></span>
+          <span class="chip">${s.flow.chips[1]}</span>
+        </div>
+        ${s.flow.note ? `<div class="side-note ${s.output && s.output.commit ? 'commit' : 'no-commit'}">${s.flow.note}</div>` : ''}
+      `;
+      col.appendChild(box);
+    });
+    flowActorsEl.appendChild(col);
+  });
+}
+
+function buildDots(tab){
+  dotsWrap.innerHTML = '';
+  tab.steps.forEach((s,i)=>{
+    const n = i+1;
+    const b = document.createElement('button');
+    b.className = 'dot'; b.dataset.step = n; b.dataset.color = s.color;
+    b.setAttribute('aria-label', `Step ${n}: ${s.caption}`);
+    b.addEventListener('click', ()=>{ pause(); goTo(n); });
+    dotsWrap.appendChild(b);
+  });
+}
+
+function loadTab(key){
+  pause();
+  activeTabKey = key;
+  const tab = TABS[key];
+  document.querySelectorAll('.tab-btn').forEach(btn=>btn.classList.toggle('active', btn.dataset.tab===key));
+  buildFlowPanel(tab);
+  buildDots(tab);
+  lastOutput = null;
+  current = 1;
+  summaryEl.innerHTML = tab.summary;
+  render();
+}
+
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=> loadTab(btn.dataset.tab));
+});
+
+function render(){
+  const tab = TABS[activeTabKey];
+  const s = tab.steps[current-1];
+
+  // input panel
+  inMain.innerHTML = s.input.main;
+  inputPanel.classList.toggle('active-read', !!s.input.activeRead);
+
+  // flow panel boxes
+  tab.steps.forEach((st,i)=>{
+    if(!st.flow) return;
+    const n = i+1;
+    const el = document.getElementById(`box-${n}`);
+    if(!el) return;
+    el.classList.toggle('active', current===n);
+    const fv = el.querySelector('.fv');
+    const link = el.querySelector('.link');
+    if(current >= n){ fv.textContent = st.flow.result; link.classList.add('solid'); }
+    else { fv.textContent = '?'; link.classList.remove('solid'); }
+  });
+
+  // output panel
+  if(s.output && s.output !== 'keep'){ lastOutput = s.output.value; }
+  outputPanel.classList.toggle('tint-red', !!lastOutput);
+  outputPanel.classList.remove('flash');
+  if(s.output && s.output !== 'keep'){ void outputPanel.offsetWidth; outputPanel.classList.add('flash'); }
+  outMain.innerHTML = lastOutput ? path(lastOutput) : '—';
+
+  // caption / controls
+  captionEl.textContent = s.caption;
+  tooltipEl.textContent = s.tooltip;
+  progressEl.textContent = `Step ${current} / ${tab.steps.length}`;
+  btnPrev.disabled = current === 1;
+  btnNext.disabled = current === tab.steps.length;
+  [...dotsWrap.querySelectorAll('.dot')].forEach(d=>{
+    const n = +d.dataset.step;
+    d.classList.toggle('current', n===current);
+    d.classList.toggle('done', n<=current);
+  });
+
+  drawConnectors();
+}
+
+function goTo(n){ const tab=TABS[activeTabKey]; current = Math.max(1, Math.min(tab.steps.length, n)); render(); }
+function next(){ const tab=TABS[activeTabKey]; if(current>=tab.steps.length){ pause(); return; } goTo(current+1); }
+function prev(){ goTo(current-1); }
+function play(){
+  const tab=TABS[activeTabKey];
+  if(current>=tab.steps.length) goTo(1);
+  playing = true; btnPlay.textContent = '⏸ Pause';
+  timer = setInterval(()=>{ const t=TABS[activeTabKey]; if(current>=t.steps.length){ pause(); return; } next(); }, 1700);
+}
+function pause(){ playing=false; btnPlay.textContent='▶ Play'; clearInterval(timer); }
+
+btnPrev.addEventListener('click', ()=>{ pause(); prev(); });
+btnNext.addEventListener('click', ()=>{ pause(); next(); });
+btnPlay.addEventListener('click', ()=> playing ? pause() : play());
+document.addEventListener('keydown', e=>{
+  if(e.key==='ArrowRight'){ pause(); next(); }
+  if(e.key==='ArrowLeft'){ pause(); prev(); }
+});
+
+// ---- connectors ----
+const svg = document.getElementById('connector-svg');
+const svgNS = 'http://www.w3.org/2000/svg';
+const root = document.getElementById('viz-root');
+
+function wrapLabel(text, maxLen=22){
+  const words = text.split(' '); const lines=[]; let line='';
+  words.forEach(w=>{
+    const trial = line ? line+' '+w : w;
+    if(trial.length > maxLen){ lines.push(line); line=w; } else { line = trial; }
+  });
+  if(line) lines.push(line);
+  return lines;
+}
+
+function drawConnectors(){
+  svg.innerHTML = '';
+  const tab = TABS[activeTabKey];
+  const cRect = root.getBoundingClientRect();
+  const revealed = tab.connectors.filter(c=>c.revealAt<=current).sort((a,b)=>b.revealAt-a.revealAt);
+
+  revealed.forEach((c, idx)=>{
+    const opacity = idx===0 ? 1 : (idx===1 ? 0.5 : 0.25);
+    const elA = document.querySelector(c.a), elB = document.querySelector(c.b);
+    if(!elA || !elB) return;
+    const rA = elA.getBoundingClientRect(), rB = elB.getBoundingClientRect();
+    const x1 = rA.left + rA.width/2 - cRect.left, y1 = rA.top + rA.height/2 - cRect.top;
+    const x2 = rB.left + rB.width/2 - cRect.left, y2 = rB.top + rB.height/2 - cRect.top;
+    const dx = x2-x1, dy = y2-y1;
+    let cx, cy;
+    if(Math.abs(dx) > Math.abs(dy)){ cx=(x1+x2)/2; cy=Math.min(y1,y2) - 34; }
+    else { cx=Math.max(x1,x2) + 90; cy=(y1+y2)/2; }
+
+    const p = document.createElementNS(svgNS,'path');
+    p.setAttribute('d', `M ${x1},${y1} Q ${cx},${cy} ${x2},${y2}`);
+    p.setAttribute('class','conn-path'); p.style.opacity = opacity;
+    svg.appendChild(p);
+
+    const midX = 0.25*x1 + 0.5*cx + 0.25*x2;
+    const midY = 0.25*y1 + 0.5*cy + 0.25*y2;
+    const lines = wrapLabel(c.label);
+    const lh = 12;
+    const startY = midY - (lines.length*lh)/2 + lh - 3;
+
+    const group = document.createElementNS(svgNS,'g'); group.style.opacity = opacity;
+    const textEl = document.createElementNS(svgNS,'text');
+    textEl.setAttribute('class','conn-label'); textEl.setAttribute('x', midX); textEl.setAttribute('text-anchor','middle');
+    lines.forEach((ln,i)=>{
+      const tspan = document.createElementNS(svgNS,'tspan');
+      tspan.setAttribute('x', midX); tspan.setAttribute('y', startY + i*lh); tspan.textContent = ln;
+      textEl.appendChild(tspan);
+    });
+    group.appendChild(textEl); svg.appendChild(group);
+
+    const bbox = textEl.getBBox();
+    const halo = document.createElementNS(svgNS,'rect');
+    halo.setAttribute('class','conn-halo');
+    halo.setAttribute('x', bbox.x-4); halo.setAttribute('y', bbox.y-2);
+    halo.setAttribute('width', bbox.width+8); halo.setAttribute('height', bbox.height+4);
+    halo.setAttribute('rx', 3); halo.style.opacity = Math.max(0.9, opacity);
+    group.insertBefore(halo, textEl);
+  });
+}
+window.addEventListener('resize', drawConnectors);
+
+loadTab('redirect');
+</script>
+</body>
+</html>
