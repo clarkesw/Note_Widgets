@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Java Lock Acquisition</title>
+<style>
+  :root {
+    --c-read: #2b6cb0;      --c-read-tint: #eaf2fa;
+    --c-compute: #718096;   --c-compute-tint: #f0f2f4;
+    --c-write: #c53030;     --c-write-tint: #fbeaea;
+    --c-lock: #b7791f;      --c-lock-tint: #faf1e0;
+    --c-allocate: #0891b2;  --c-allocate-tint: #e6f6f9;
+    --c-execute: #2f855a;   --c-execute-tint: #eaf5ef;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    max-width: 680px;
+    margin: 32px auto;
+    color: #222222;
+    padding: 0 16px;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  p.sub { font-size: 14px; color: #6b7280; margin: 0 0 20px; }
+
+  .mono { font-family: "SF Mono", Menlo, Consolas, monospace; }
+
+  #widget { position: relative; }
+  #connector-svg {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; overflow: visible;
+  }
+
+  /* legend */
+  .legend {
+    display: flex; gap: 22px; flex-wrap: wrap;
+    background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 12px;
+    padding: 12px 18px; font-size: 13px; color: #444444; margin-bottom: 18px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 7px; }
+  .legend-swatch { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+
+  /* panels */
+  .panel {
+    background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 14px;
+    padding: 16px 18px; margin-bottom: 16px; transition: border-color .3s, background-color .3s;
+  }
+  .panel-label {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px; font-weight: 600; letter-spacing: .06em;
+    color: #9aa1ad; text-transform: uppercase; margin: 4px 0 8px;
+  }
+
+  /* output panel */
+  #output-panel { text-align: center; }
+  .output-cells { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .cell {
+    background: #ffffff; border: 1px solid #e2e5ea; border-radius: 10px;
+    padding: 10px 14px; min-width: 84px; position: relative;
+  }
+  .cell-label {
+    font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+    color: #8a93a3; margin-bottom: 4px;
+  }
+  .cell-value {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 15px; font-weight: 600; color: #c3c8d1;
+  }
+  .cell-value.set { color: #1a1a1a; }
+  @keyframes flashPulse {
+    0%   { box-shadow: 0 0 0 6px color-mix(in srgb, var(--flash-color) 45%, transparent); }
+    100% { box-shadow: 0 0 0 0px color-mix(in srgb, var(--flash-color) 0%, transparent); }
+  }
+  .flash { animation: flashPulse 0.7s ease-out; }
+
+  /* input panel */
+  #input-panel { text-align: center; border-color: #e5e7eb; }
+  #input-panel.active-read { border-color: var(--c-read); box-shadow: 0 0 0 2px var(--c-read-tint); }
+  .input-label { font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--c-read); margin-bottom: 4px; }
+  .input-value {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 15px; font-weight: 600;
+    color: #1a1a1a;
+  }
+  .input-value-wrap {
+    position: relative; display: inline-block; min-height: 20px; cursor: help;
+  }
+  .input-value-wrap:hover .tooltip, .input-value-wrap:focus .tooltip { display: block; }
+  .input-value-wrap .tooltip { bottom: 26px; }
+  .input-sub { font-size: 11px; color: #8a93a3; margin-top: 2px; }
+
+  /* flow panel */
+  #flow-panel { }
+  .flow-columns { display: flex; gap: 0; align-items: stretch; }
+  .flow-col { flex: 1; min-width: 0; padding: 0 16px; }
+  .flow-col:first-child { padding-left: 0; }
+  .flow-col:last-child { padding-right: 0; border-left: 1px solid #e5e7eb; }
+  .flow-col-title {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; font-weight: 600;
+    letter-spacing: .04em; text-transform: uppercase; color: #8a93a3; margin-bottom: 10px; text-align: center;
+  }
+  .step-box {
+    background: #ffffff; border: 1px solid #e2e5ea; border-left: 4px solid var(--step-color, #e2e5ea);
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; font-size: 12px;
+  }
+  .step-box .sb-title {
+    font-weight: 600; color: #1a1a1a; margin-bottom: 3px; font-size: 12px;
+    text-transform: uppercase; letter-spacing: .03em; opacity: 0.75;
+  }
+  .step-box .sb-value {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; color: #6b7280; min-height: 16px;
+  }
+  .step-box.active {
+    border-color: var(--step-color);
+    background: var(--step-tint);
+    box-shadow: 0 0 0 1px var(--step-color) inset;
+  }
+  .step-box.type-read      { --step-color: var(--c-read);      --step-tint: var(--c-read-tint); }
+  .step-box.type-compute   { --step-color: var(--c-compute);   --step-tint: var(--c-compute-tint); }
+  .step-box.type-write     { --step-color: var(--c-write);     --step-tint: var(--c-write-tint); }
+  .step-box.type-lock      { --step-color: var(--c-lock);      --step-tint: var(--c-lock-tint); }
+  .step-box.type-allocate  { --step-color: var(--c-allocate);  --step-tint: var(--c-allocate-tint); }
+  .step-box.type-execute   { --step-color: var(--c-execute);   --step-tint: var(--c-execute-tint); }
+
+  .chip {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 3px 8px; border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px; border: 1px solid #444; background: #fff; color: #1a1a1a; flex-shrink: 0;
+  }
+  .chip.faded { opacity: 0.4; }
+  .wait-edge { height: 0; border-top: 2px dashed var(--c-lock); width: 20px; margin: 0 3px; flex-shrink: 0; }
+  .wait-edge.solid-allocate { border-top: 2px solid var(--c-allocate); }
+  .wait-edge.solid-write { border-top: 2px solid var(--c-write); }
+  .structure-row { display: flex; align-items: center; gap: 0; margin-top: 6px; flex-wrap: nowrap; justify-content: center; }
+
+  /* caption + controls */
+  .caption-row {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    font-size: 14px; color: #444444; margin-top: 4px; min-height: 20px;
+  }
+  .info-btn {
+    width: 17px; height: 17px; border-radius: 50%; border: 1px solid #bbb;
+    background: #f2f2f2; font-size: 11px; line-height: 1; cursor: pointer; position: relative;
+    display: inline-flex; align-items: center; justify-content: center; padding: 0; color: #444;
+  }
+  .tooltip {
+    display: none; position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+    width: 260px; background: #2d3748; color: #fff; border-radius: 6px; padding: 10px 12px;
+    font-size: 12px; line-height: 1.4; z-index: 10; text-align: left;
+  }
+  .tooltip::after {
+    content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+    border: 6px solid transparent; border-top-color: #2d3748;
+  }
+  .info-btn:hover .tooltip, .info-btn:focus .tooltip { display: block; }
+
+  .result-line {
+    font-size: 13px; color: #6b7280; text-align: center; margin-top: 16px;
+  }
+
+  .controls-row {
+    position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 18px;
+  }
+  button.nav-btn {
+    padding: 8px 16px; border: 1px solid #bbb; border-radius: 6px; background: #fff;
+    font-size: 14px; cursor: pointer;
+  }
+  button.nav-btn:disabled { opacity: 0.4; cursor: default; }
+  .dots {
+    display: flex; align-items: center; gap: 9px; flex-wrap: wrap; max-width: 200px;
+  }
+  .dot {
+    width: 10px; height: 10px; border-radius: 50%; background: #ccc; border: none;
+    padding: 0; cursor: pointer; transition: transform .15s;
+  }
+  .dot.current { transform: scale(2); transform-origin: center; }
+  .step-readout {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; color: #6b7280;
+    white-space: nowrap; position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  }
+</style>
+</head>
+<body>
+
+<h1>Java Lock Acquisition</h1>
+<p class="sub">A thread acquires locks one at a time, even while it's already holding another.</p>
+
+<div id="widget">
+<svg id="connector-svg"></svg>
+
+<div class="legend" id="legend"></div>
+
+<div class="panel" id="output-panel">
+  <div class="panel-label">Output — monitor state</div>
+  <div class="output-cells">
+    <div class="cell" id="cell-lockA"><div class="cell-label">Lock A</div><div class="cell-value" id="val-lockA">—</div></div>
+    <div class="cell" id="cell-lockB"><div class="cell-label">Lock B</div><div class="cell-value" id="val-lockB">—</div></div>
+    <div class="cell" id="cell-stack"><div class="cell-label">T holds</div><div class="cell-value" id="val-stack">[]</div></div>
+    <div class="cell" id="cell-status"><div class="cell-label">Status</div><div class="cell-value" id="val-status">—</div></div>
+  </div>
+</div>
+
+<div class="panel" id="input-panel">
+  <div class="panel-label">Input</div>
+  <div class="input-label">reading</div>
+  <div class="input-value-wrap" tabindex="0">
+    <span class="input-value" id="input-value">—</span>
+    <span class="tooltip" id="input-tooltip"></span>
+  </div>
+  <div class="input-sub" id="input-sub">read</div>
+</div>
+
+<div class="panel" id="flow-panel">
+  <div class="panel-label">Flow</div>
+  <div class="flow-columns">
+    <div class="flow-col">
+      <div class="flow-col-title">Outer: sync(A)</div>
+      <div class="step-box type-execute" id="step-req-a">
+        <div class="sb-title">request A</div>
+        <div class="sb-value" id="v-req-a">?</div>
+      </div>
+      <div class="step-box type-compute" id="step-check-a">
+        <div class="sb-title">check A</div>
+        <div class="sb-value" id="v-check-a">?</div>
+      </div>
+      <div class="step-box type-allocate" id="step-acquire-a">
+        <div class="sb-title">acquire A</div>
+        <div class="sb-value" id="v-acquire-a">?</div>
+        <div class="structure-row" id="struct-acquire-a"></div>
+      </div>
+      <div class="step-box type-write" id="step-release-a">
+        <div class="sb-title">release A</div>
+        <div class="sb-value" id="v-release-a">?</div>
+        <div class="structure-row" id="struct-release-a"></div>
+      </div>
+    </div>
+    <div class="flow-col">
+      <div class="flow-col-title">Inner: sync(B)</div>
+      <div class="step-box type-execute" id="step-req-b">
+        <div class="sb-title">request B</div>
+        <div class="sb-value" id="v-req-b">?</div>
+      </div>
+      <div class="step-box type-compute" id="step-check-b">
+        <div class="sb-title">check B</div>
+        <div class="sb-value" id="v-check-b">?</div>
+      </div>
+      <div class="step-box type-allocate" id="step-acquire-b">
+        <div class="sb-title">acquire B</div>
+        <div class="sb-value" id="v-acquire-b">?</div>
+        <div class="structure-row" id="struct-acquire-b"></div>
+      </div>
+      <div class="step-box type-write" id="step-transfer">
+        <div class="sb-title">transfer funds</div>
+        <div class="sb-value" id="v-transfer">?</div>
+      </div>
+      <div class="step-box type-write" id="step-release-b">
+        <div class="sb-title">release B</div>
+        <div class="sb-value" id="v-release-b">?</div>
+        <div class="structure-row" id="struct-release-b"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="caption-row" id="caption-row"></div>
+<div class="result-line">Result: nested synchronized blocks let one thread hold several locks at once — that's normal, and only turns into deadlock if another thread grabs the same locks in reverse order.</div>
+
+<div class="controls-row">
+  <button class="nav-btn" id="btn-back">Back</button>
+  <div class="dots" id="dots"></div>
+  <div class="step-readout" id="step-readout">Step 1 / 10</div>
+  <button class="nav-btn" id="btn-next">Next</button>
+</div>
+
+</div>
+
+<script>
+const COLORS = {
+  read: '#2b6cb0', compute: '#718096', write: '#c53030',
+  lock: '#b7791f', allocate: '#0891b2', execute: '#2f855a'
+};
+
+const steps = [
+  {
+    type: 'read', box: null,
+    caption: 'Load the call',
+    tooltip: 'Thread T calls transfer(accountA, accountB, 50) — a method that needs to touch both accounts, so it will need both accounts\' locks.',
+    input: 'T.transfer(A, B, 50)', inputSub: 'read',
+    inputHint: '"T.transfer(A, B, 50)" means "Thread T calls transfer(), passing account A, account B, and an amount of 50" — the method needs exclusive access to both accounts.',
+    commit: null
+  },
+  {
+    type: 'execute', box: 'step-req-a',
+    caption: 'T enters synchronized(A)',
+    tooltip: 'The outer block is "synchronized(A) { ... }". Before the JVM lets T run the code inside, it must first acquire A\'s intrinsic lock (its monitor).',
+    input: 'synchronized(A) {', inputSub: 'read',
+    inputHint: 'Java\'s "synchronized(obj) { }" syntax means "acquire obj\'s monitor lock before running this block, and release it automatically when the block exits."',
+    boxValue: 'target: A',
+    commit: null
+  },
+  {
+    type: 'compute', box: 'step-check-a',
+    caption: 'Check: is A free?',
+    tooltip: 'The JVM checks A\'s monitor: no owner recorded, so it\'s free to acquire.',
+    input: 'owner(A) == ?', inputSub: 'compute',
+    inputHint: '"owner(A)" asks "which thread currently owns A\'s monitor, if any?" — the check every lock request starts with.',
+    boxValue: 'free',
+    commit: null
+  },
+  {
+    type: 'allocate', box: 'step-acquire-a',
+    caption: 'T acquires Lock A',
+    tooltip: 'T becomes A\'s owner, with a hold count of 1. T can now safely run the outer block\'s body.',
+    input: 'A.owner = T', inputSub: 'read',
+    inputHint: '"A.owner = T" means the monitor now records Thread T as the current holder of A\'s lock.',
+    boxValue: 'owner: T',
+    commit: { field: 'lockA', value: 'T' }, stackOp: 'push', stackVal: 'A'
+  },
+  {
+    type: 'execute', box: 'step-req-b',
+    caption: 'Still holding A, T requests B',
+    tooltip: 'Inside the outer block, T calls a nested synchronized(B) block — this is the moment that answers "why hold one lock and ask for another": one operation needs both accounts, so T keeps A and reaches for B too.',
+    input: 'synchronized(B) {', inputSub: 'read',
+    inputHint: 'Same syntax as before, now nested one level deeper — T is not releasing A first, it\'s simply requesting a second, different lock while the first stays held.',
+    boxValue: 'target: B',
+    commit: null
+  },
+  {
+    type: 'compute', box: 'step-check-b',
+    caption: 'Check: is B free?',
+    tooltip: 'The JVM checks B\'s monitor the same way it checked A\'s. No owner recorded, so B is free too.',
+    input: 'owner(B) == ?', inputSub: 'compute',
+    inputHint: 'Same ownership check as before, now against Lock B instead of Lock A.',
+    boxValue: 'free',
+    commit: null
+  },
+  {
+    type: 'allocate', box: 'step-acquire-b',
+    caption: 'T acquires Lock B',
+    tooltip: 'T now owns both A and B at once. This is legal and common in Java — the risk only appears if some other thread tries to acquire A and B in the opposite order at the same time.',
+    input: 'B.owner = T', inputSub: 'read',
+    inputHint: '"B.owner = T" means the monitor now records Thread T as B\'s holder too — T is holding two locks simultaneously.',
+    boxValue: 'owner: T',
+    commit: { field: 'lockB', value: 'T' }, stackOp: 'push', stackVal: 'B'
+  },
+  {
+    type: 'write', box: 'step-transfer',
+    caption: 'T moves the funds',
+    tooltip: 'With both accounts locked, T can safely debit A and credit B — no other thread can observe or interfere with a half-finished transfer.',
+    input: 'A.balance -= 50; B.balance += 50', inputSub: 'read',
+    inputHint: 'This is the actual critical-section work the locks exist to protect: two related updates that must happen as one atomic unit.',
+    boxValue: 'moved $50',
+    commit: { field: 'status', value: 'transferred $50' }
+  },
+  {
+    type: 'write', box: 'step-release-b',
+    caption: 'T releases Lock B',
+    tooltip: 'The inner synchronized(B) block ends, so its lock is released first — the reverse of the order it was acquired in, which is what "}" closing the inner block first guarantees automatically.',
+    input: '} // exits sync(B)', inputSub: 'read',
+    inputHint: 'Closing "}" on the inner block releases B\'s lock automatically — Java releases intrinsic locks for you when the synchronized block ends, even if an exception is thrown inside it.',
+    boxValue: 'owner: —',
+    commit: { field: 'lockB', value: '—' }, stackOp: 'pop', stackVal: 'B'
+  },
+  {
+    type: 'write', box: 'step-release-a',
+    caption: 'T releases Lock A',
+    tooltip: 'The outer synchronized(A) block ends last, releasing A. Locks always unwind in reverse of acquisition order because they\'re tied to nested block scopes.',
+    input: '} // exits sync(A)', inputSub: 'read',
+    inputHint: 'Closing "}" on the outer block releases A. Notice the order: acquired A then B, released B then A — a stack, not a queue.',
+    boxValue: 'owner: —',
+    commit: { field: 'lockA', value: '—' }, stackOp: 'pop', stackVal: 'A',
+    connector: null
+  }
+];
+
+// extra connectors keyed by triggering step index (0-based)
+const connectors = [
+  { trigger: 4, from: 'step-req-b', to: 'step-acquire-a', label: 'still holds A' },
+  { trigger: 8, from: 'step-release-b', to: 'step-acquire-b', label: 'reverse-order release' },
+  { trigger: 9, from: 'step-release-a', to: 'step-acquire-a', label: 'reverse-order release' }
+];
+
+let current = 0; // start on step 1
+
+function el(id) { return document.getElementById(id); }
+
+function buildLegend() {
+  const items = [
+    ['read', 'Blue — Read / input'],
+    ['compute', 'Gray — Compute / transform'],
+    ['write', 'Red — Write / critical outcome'],
+    ['allocate', 'Teal — Allocate / reserve'],
+    ['execute', 'Green — Execute']
+  ];
+  const legend = el('legend');
+  legend.innerHTML = items.map(([type, label]) =>
+    `<div class="legend-item"><div class="legend-swatch" style="background:${COLORS[type]}"></div>${label}</div>`
+  ).join('');
+}
+
+function buildDots() {
+  const dots = el('dots');
+  dots.innerHTML = '';
+  steps.forEach((s, i) => {
+    const b = document.createElement('button');
+    b.className = 'dot';
+    b.setAttribute('aria-label', 'Go to step ' + (i + 1));
+    b.addEventListener('click', () => { current = i; render(); });
+    dots.appendChild(b);
+  });
+}
+
+function chip(label, faded) {
+  return `<div class="chip${faded ? ' faded' : ''}">${label}</div>`;
+}
+function edge(cls) {
+  return `<div class="wait-edge ${cls}"></div>`;
+}
+
+function structureHTML(step) {
+  if (step.box === 'step-acquire-a') return chip('T') + edge('solid-allocate') + chip('A');
+  if (step.box === 'step-acquire-b') return chip('T') + edge('solid-allocate') + chip('B');
+  if (step.box === 'step-release-a') return chip('T', true) + edge('solid-write') + chip('A', true);
+  if (step.box === 'step-release-b') return chip('T', true) + edge('solid-write') + chip('B', true);
+  return '';
+}
+
+function render() {
+  const captionRow = el('caption-row');
+  const s = steps[current];
+  captionRow.innerHTML = `<span>${s.caption}</span>
+    <button class="info-btn" tabindex="0">?
+      <span class="tooltip">${s.tooltip}</span>
+    </button>`;
+
+  el('step-readout').textContent = `Step ${current + 1} / ${steps.length}`;
+  el('btn-back').disabled = current <= 0;
+  el('btn-next').disabled = current === steps.length - 1;
+
+  const dotEls = document.querySelectorAll('.dot');
+  dotEls.forEach((d, i) => {
+    d.classList.remove('current');
+    d.style.background = (i <= current) ? COLORS[steps[i].type] : '#ccc';
+    if (i === current) d.classList.add('current');
+  });
+
+  // input panel
+  const inputPanel = el('input-panel');
+  el('input-value').textContent = s.input;
+  el('input-value').classList.add('set');
+  el('input-sub').textContent = s.inputSub;
+  el('input-tooltip').textContent = s.inputHint || '';
+  inputPanel.classList.toggle('active-read', s.type === 'read');
+
+  // flow boxes
+  document.querySelectorAll('.step-box').forEach(box => box.classList.remove('active'));
+  steps.forEach((st, i) => {
+    if (!st.box) return;
+    const valEl = document.getElementById('v-' + st.box.replace('step-', ''));
+    valEl.textContent = (i <= current) ? '→ ' + st.boxValue : '?';
+    const structEl = document.getElementById('struct-' + st.box.replace('step-', ''));
+    if (structEl) {
+      structEl.innerHTML = (i <= current && structureHTML(st)) ? structureHTML(st) : '';
+    }
+  });
+  if (steps[current].box) el(steps[current].box).classList.add('active');
+
+  // output panel: recompute full state from commits up to current
+  const state = { lockA: '—', lockB: '—', status: '—' };
+  let stack = [];
+  let lastCommit = null;
+  for (let i = 0; i <= current; i++) {
+    const st = steps[i];
+    if (st.commit) {
+      state[st.commit.field] = st.commit.value;
+      lastCommit = { step: i, field: st.commit.field, color: COLORS[st.type] };
+    }
+    if (st.stackOp === 'push') stack.push(st.stackVal);
+    if (st.stackOp === 'pop') stack = stack.filter(v => v !== st.stackVal);
+  }
+  ['lockA', 'lockB', 'status'].forEach(f => {
+    const valEl = el('val-' + f);
+    valEl.textContent = state[f];
+    valEl.classList.toggle('set', state[f] !== '—');
+  });
+  const stackEl = el('val-stack');
+  stackEl.textContent = '[' + stack.join(', ') + ']';
+  stackEl.classList.toggle('set', stack.length > 0);
+
+  const outputPanel = el('output-panel');
+  outputPanel.style.borderColor = lastCommit ? lastCommit.color : '#e5e7eb';
+
+  // flash: field commit + stack cell whenever stackOp happened this exact step
+  const curStep = steps[current];
+  if (curStep.commit) {
+    const color = COLORS[curStep.type];
+    const cellEl = el('cell-' + curStep.commit.field);
+    cellEl.style.setProperty('--flash-color', color);
+    cellEl.classList.remove('flash'); void cellEl.offsetWidth; cellEl.classList.add('flash');
+  }
+  if (curStep.stackOp) {
+    const color = COLORS[curStep.type];
+    const stackCell = el('cell-stack');
+    stackCell.style.setProperty('--flash-color', color);
+    stackCell.classList.remove('flash'); void stackCell.offsetWidth; stackCell.classList.add('flash');
+  }
+
+  drawConnectors();
+}
+
+function drawConnectors() {
+  const svg = el('connector-svg');
+  const widget = el('widget');
+  svg.innerHTML = '';
+  const wRect = widget.getBoundingClientRect();
+
+  const active = connectors.filter(c => current >= c.trigger);
+  const ordered = [...active].sort((a, b) => b.trigger - a.trigger);
+  const opacityFor = {};
+  ordered.forEach((item, idx) => {
+    opacityFor[item.trigger] = idx === 0 ? 1 : (idx === 1 ? 0.5 : 0.25);
+  });
+
+  active.forEach(c => {
+    const fromEl = document.getElementById(c.from);
+    const toEl = document.getElementById(c.to);
+    if (!fromEl || !toEl) return;
+    const fr = fromEl.getBoundingClientRect();
+    const tr = toEl.getBoundingClientRect();
+    const x1 = fr.left + fr.width / 2 - wRect.left;
+    const y1 = fr.top + fr.height / 2 - wRect.top;
+    const x2 = tr.left + tr.width / 2 - wRect.left;
+    const y2 = tr.top + tr.height / 2 - wRect.top;
+
+    const ns = 'http://www.w3.org/2000/svg';
+    const path = document.createElementNS(ns, 'path');
+    const midX = (x1 + x2) / 2;
+    const midY = (y1 + y2) / 2;
+    path.setAttribute('d', `M ${x1} ${y1} Q ${midX} ${midY - 16} ${x2} ${y2}`);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', '#6b7280');
+    path.setAttribute('stroke-width', '1.3');
+    path.setAttribute('stroke-dasharray', '3 3');
+    path.style.opacity = opacityFor[c.trigger];
+    svg.appendChild(path);
+
+    const label = wrapLabel(c.label, 22);
+    const lineHeight = 12;
+    const text = document.createElementNS(ns, 'text');
+    text.setAttribute('x', midX);
+    text.setAttribute('y', midY - 16 - (label.length - 1) * lineHeight / 2);
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('font-family', '"SF Mono", Menlo, Consolas, monospace');
+    text.setAttribute('font-size', '10');
+    text.setAttribute('fill', '#444444');
+    text.style.opacity = opacityFor[c.trigger];
+    label.forEach((line, i) => {
+      const tspan = document.createElementNS(ns, 'tspan');
+      tspan.setAttribute('x', midX);
+      tspan.setAttribute('dy', i === 0 ? 0 : lineHeight);
+      tspan.textContent = line;
+      text.appendChild(tspan);
+    });
+    svg.appendChild(text);
+
+    requestAnimationFrame(() => {
+      try {
+        const bbox = text.getBBox();
+        const rect = document.createElementNS(ns, 'rect');
+        rect.setAttribute('x', bbox.x - 4);
+        rect.setAttribute('y', bbox.y - 2);
+        rect.setAttribute('width', bbox.width + 8);
+        rect.setAttribute('height', bbox.height + 4);
+        rect.setAttribute('rx', 3);
+        rect.setAttribute('fill', '#f7f8fa');
+        rect.setAttribute('stroke', '#e5e7eb');
+        rect.style.opacity = opacityFor[c.trigger];
+        svg.insertBefore(rect, text);
+      } catch (e) {}
+    });
+  });
+}
+
+function wrapLabel(text, maxChars) {
+  const words = text.split(' ');
+  const lines = [];
+  let line = '';
+  words.forEach(w => {
+    if ((line + ' ' + w).trim().length > maxChars) { lines.push(line.trim()); line = w; }
+    else { line = (line + ' ' + w).trim(); }
+  });
+  if (line) lines.push(line);
+  return lines;
+}
+
+el('btn-next').addEventListener('click', () => { if (current < steps.length - 1) { current++; render(); } });
+el('btn-back').addEventListener('click', () => { if (current > 0) { current--; render(); } });
+window.addEventListener('resize', () => drawConnectors());
+
+buildLegend();
+buildDots();
+render();
+</script>
+</body>
+</html>

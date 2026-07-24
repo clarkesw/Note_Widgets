@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lock Acquisition</title>
+<style>
+  :root {
+    --c-read: #2b6cb0;      --c-read-tint: #eaf2fa;
+    --c-compute: #718096;   --c-compute-tint: #f0f2f4;
+    --c-write: #c53030;     --c-write-tint: #fbeaea;
+    --c-lock: #b7791f;      --c-lock-tint: #faf1e0;
+    --c-allocate: #0891b2;  --c-allocate-tint: #e6f6f9;
+    --c-execute: #2f855a;   --c-execute-tint: #eaf5ef;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    max-width: 680px;
+    margin: 32px auto;
+    color: #222222;
+    padding: 0 16px;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  p.sub { font-size: 14px; color: #6b7280; margin: 0 0 20px; }
+
+  .mono { font-family: "SF Mono", Menlo, Consolas, monospace; }
+
+  #widget { position: relative; }
+  #connector-svg {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; overflow: visible;
+  }
+
+  .legend {
+    display: flex; gap: 22px; flex-wrap: wrap;
+    background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 12px;
+    padding: 12px 18px; font-size: 13px; color: #444444; margin-bottom: 18px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 7px; }
+  .legend-swatch { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+
+  .panel {
+    background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 14px;
+    padding: 16px 18px; margin-bottom: 16px; transition: border-color .3s, background-color .3s;
+  }
+  .panel-label {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px; font-weight: 600; letter-spacing: .06em;
+    color: #9aa1ad; text-transform: uppercase; margin: 4px 0 8px;
+  }
+
+  /* output panel: single value */
+  #output-panel { text-align: center; }
+  .output-single-label {
+    font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: #8a93a3; margin-bottom: 6px;
+  }
+  .output-value-box { display: inline-block; padding: 4px 4px; border-radius: 8px; }
+  .output-value {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 30px; font-weight: 700;
+    color: #c3c8d1; letter-spacing: .02em;
+  }
+  .output-value.set { color: #1a1a1a; }
+  .output-sub { font-size: 11px; color: #8a93a3; margin-top: 4px; }
+  @keyframes flashPulse {
+    0%   { box-shadow: 0 0 0 6px color-mix(in srgb, var(--flash-color) 45%, transparent); }
+    100% { box-shadow: 0 0 0 0px color-mix(in srgb, var(--flash-color) 0%, transparent); }
+  }
+  .flash { animation: flashPulse 0.7s ease-out; }
+
+  /* input panel */
+  #input-panel { text-align: center; border-color: #e5e7eb; }
+  #input-panel.active-read { border-color: var(--c-read); box-shadow: 0 0 0 2px var(--c-read-tint); }
+  .input-label { font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--c-read); margin-bottom: 4px; }
+  .input-value {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 15px; font-weight: 600;
+    color: #1a1a1a;
+  }
+  .input-value-wrap { position: relative; display: inline-block; min-height: 20px; cursor: help; }
+  .input-value-wrap:hover .tooltip, .input-value-wrap:focus .tooltip { display: block; }
+  .input-value-wrap .tooltip { bottom: 26px; }
+  .input-sub { font-size: 11px; color: #8a93a3; margin-top: 2px; }
+
+  /* flow panel — single actor */
+  #flow-panel { }
+  .flow-columns { display: flex; justify-content: center; }
+  .flow-col { flex: 1; max-width: 320px; }
+  .flow-col-title {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; font-weight: 600;
+    letter-spacing: .04em; text-transform: uppercase; color: #8a93a3; margin-bottom: 10px; text-align: center;
+  }
+  .step-box {
+    background: #ffffff; border: 1px solid #e2e5ea; border-left: 4px solid var(--step-color, #e2e5ea);
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; font-size: 12px;
+  }
+  .step-box .sb-title {
+    font-weight: 600; color: #1a1a1a; margin-bottom: 3px; font-size: 12px;
+    text-transform: uppercase; letter-spacing: .03em; opacity: 0.75;
+  }
+  .step-box .sb-value {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; color: #6b7280; min-height: 16px;
+  }
+  .step-box .sb-note { font-size: 10px; color: #9aa1ad; margin-top: 3px; font-style: italic; }
+  .step-box.active {
+    border-color: var(--step-color); background: var(--step-tint);
+    box-shadow: 0 0 0 1px var(--step-color) inset;
+  }
+  .step-box.type-read      { --step-color: var(--c-read);      --step-tint: var(--c-read-tint); }
+  .step-box.type-compute   { --step-color: var(--c-compute);   --step-tint: var(--c-compute-tint); }
+  .step-box.type-write     { --step-color: var(--c-write);     --step-tint: var(--c-write-tint); }
+  .step-box.type-allocate  { --step-color: var(--c-allocate);  --step-tint: var(--c-allocate-tint); }
+  .step-box.type-execute   { --step-color: var(--c-execute);   --step-tint: var(--c-execute-tint); }
+
+  .chip {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 3px 8px; border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px; border: 1px solid #444; background: #fff; color: #1a1a1a; flex-shrink: 0;
+  }
+  .chip.faded { opacity: 0.4; }
+  .wait-edge { height: 0; border-top: 2px solid var(--c-allocate); width: 24px; margin: 0 3px; flex-shrink: 0; }
+  .wait-edge.released { border-top-color: var(--c-write); }
+  .structure-row { display: flex; align-items: center; gap: 0; margin-top: 6px; flex-wrap: nowrap; justify-content: center; }
+
+  .caption-row {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    font-size: 14px; color: #444444; margin-top: 4px; min-height: 20px;
+  }
+  .info-btn {
+    width: 17px; height: 17px; border-radius: 50%; border: 1px solid #bbb;
+    background: #f2f2f2; font-size: 11px; line-height: 1; cursor: pointer; position: relative;
+    display: inline-flex; align-items: center; justify-content: center; padding: 0; color: #444;
+  }
+  .tooltip {
+    display: none; position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+    width: 260px; background: #2d3748; color: #fff; border-radius: 6px; padding: 10px 12px;
+    font-size: 12px; line-height: 1.4; z-index: 10; text-align: left;
+  }
+  .tooltip::after {
+    content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+    border: 6px solid transparent; border-top-color: #2d3748;
+  }
+  .info-btn:hover .tooltip, .info-btn:focus .tooltip { display: block; }
+
+  .result-line { font-size: 13px; color: #6b7280; text-align: center; margin-top: 16px; }
+
+  .controls-row {
+    position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 18px;
+  }
+  button.nav-btn {
+    padding: 8px 16px; border: 1px solid #bbb; border-radius: 6px; background: #fff;
+    font-size: 14px; cursor: pointer;
+  }
+  button.nav-btn:disabled { opacity: 0.4; cursor: default; }
+  .dots { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; max-width: 200px; }
+  .dot {
+    width: 10px; height: 10px; border-radius: 50%; background: #ccc; border: none;
+    padding: 0; cursor: pointer; transition: transform .15s;
+  }
+  .dot.current { transform: scale(2); transform-origin: center; }
+  .step-readout {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; color: #6b7280;
+    white-space: nowrap; position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  }
+</style>
+</head>
+<body>
+
+<h1>Lock Acquisition</h1>
+<p class="sub">The core theory behind mutual exclusion — no code, just the request, the invariant, and the guarantee.</p>
+
+<div id="widget">
+<svg id="connector-svg"></svg>
+
+<div class="legend" id="legend"></div>
+
+<div class="panel" id="output-panel">
+  <div class="output-single-label">Lock L</div>
+  <div class="output-value-box" id="output-value-box">
+    <div class="output-value set" id="output-value">no owner</div>
+  </div>
+  <div class="output-sub">belongs to</div>
+</div>
+
+<div class="panel" id="input-panel">
+  <div class="panel-label">Input</div>
+  <div class="input-label">reading</div>
+  <div class="input-value-wrap" tabindex="0">
+    <span class="input-value" id="input-value">—</span>
+    <span class="tooltip" id="input-tooltip"></span>
+  </div>
+  <div class="input-sub" id="input-sub">read</div>
+</div>
+
+<div class="panel" id="flow-panel">
+  <div class="panel-label">Flow</div>
+  <div class="flow-columns">
+    <div class="flow-col">
+      <div class="flow-col-title">Thread T</div>
+      <div class="step-box type-execute" id="step-request">
+        <div class="sb-title">request L</div>
+        <div class="sb-value" id="v-request">?</div>
+      </div>
+      <div class="step-box type-compute" id="step-check">
+        <div class="sb-title">check L</div>
+        <div class="sb-value" id="v-check">?</div>
+      </div>
+      <div class="step-box type-allocate" id="step-acquire">
+        <div class="sb-title">acquire L</div>
+        <div class="sb-value" id="v-acquire">?</div>
+        <div class="structure-row" id="struct-acquire"></div>
+        <div class="sb-note">↑ commits output</div>
+      </div>
+      <div class="step-box type-write" id="step-use">
+        <div class="sb-title">use</div>
+        <div class="sb-value" id="v-use">?</div>
+        <div class="sb-note">no output change</div>
+      </div>
+      <div class="step-box type-write" id="step-release">
+        <div class="sb-title">release L</div>
+        <div class="sb-value" id="v-release">?</div>
+        <div class="structure-row" id="struct-release"></div>
+        <div class="sb-note">↑ commits output</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="caption-row" id="caption-row"></div>
+<div class="result-line">Result: a lock is really just one invariant — at most one owner at a time — enforced across a request/grant/release cycle. Every concrete mechanism (a keyword, a library call, a hardware instruction) is one way of implementing this same theory.</div>
+
+<div class="controls-row">
+  <button class="nav-btn" id="btn-back">Back</button>
+  <div class="dots" id="dots"></div>
+  <div class="step-readout" id="step-readout">Step 1 / 6</div>
+  <button class="nav-btn" id="btn-next">Next</button>
+</div>
+
+</div>
+
+<script>
+const COLORS = {
+  read: '#2b6cb0', compute: '#718096', write: '#c53030',
+  allocate: '#0891b2', execute: '#2f855a'
+};
+
+const steps = [
+  {
+    type: 'read', box: null,
+    caption: 'Set up the exclusion requirement',
+    tooltip: 'A lock exists to enforce one invariant: at most one thread may hold L at any moment. Everything that follows is just that invariant being checked and maintained.',
+    input: 'T requires exclusive access to L', inputSub: 'request',
+    inputHint: 'This isn\'t code — it\'s the theoretical starting condition. T has some operation it needs to run without any other thread interfering, and L is the mechanism that will guarantee that.',
+    commit: null
+  },
+  {
+    type: 'execute', box: 'step-request',
+    caption: 'T requests L',
+    tooltip: 'In lock theory, "acquire" is defined by its effect — grant now, or make the requester wait — not by any particular language\'s syntax for asking.',
+    input: 'T asks: may I hold L?', inputSub: 'request',
+    inputHint: 'This is the abstract acquire operation. Every concrete mechanism (a language keyword, a library call, a hardware instruction) is just one implementation of this same request.',
+    boxValue: 'requesting',
+    commit: null
+  },
+  {
+    type: 'compute', box: 'step-check',
+    caption: 'Check the invariant',
+    tooltip: 'Before granting L, the system must verify the invariant still holds afterward: "at most one owner." That means checking whether an owner already exists.',
+    input: 'Invariant: does an owner already exist?', inputSub: 'evaluate',
+    inputHint: 'This is a conceptual check, not a specific function call — any lock implementation has to answer this question, one way or another, before it can safely grant access.',
+    boxValue: 'no owner exists',
+    commit: null
+  },
+  {
+    type: 'allocate', box: 'step-acquire',
+    caption: 'T is granted L',
+    tooltip: 'No owner exists, so granting L to T keeps the invariant true — it goes from "0 owners" to "1 owner," never more. T now holds exclusive access.',
+    input: 'No owner exists → grant to T', inputSub: 'commit',
+    inputHint: 'This is the moment ownership is established. Conceptually: the invariant "at most one owner" is preserved by moving from zero owners straight to exactly one.',
+    boxValue: 'belongs to: T',
+    commit: { value: 'T' },
+    structure: { released: false }
+  },
+  {
+    type: 'write', box: 'step-use',
+    caption: 'T runs its critical section',
+    tooltip: 'The "critical section" is the portion of an operation that must not be interleaved with any other thread\'s access to the same resource — that non-interleaving guarantee is the entire reason locks exist.',
+    input: 'T\'s critical section runs, protected by L', inputSub: 'execute',
+    inputHint: 'Whatever T is doing here is deliberately unspecified in theory terms — a lock protects a critical section in general, regardless of what particular work happens inside it.',
+    boxValue: 'runs exclusively',
+    commit: null
+  },
+  {
+    type: 'write', box: 'step-release',
+    caption: 'T relinquishes L',
+    tooltip: 'Releasing returns the invariant to its base state — "0 owners" — making L available to be granted again. Whether this happens automatically or must be done explicitly is a property of the specific mechanism, not of lock theory itself.',
+    input: 'T gives up ownership → invariant resets', inputSub: 'commit',
+    inputHint: 'This is the mirror of the grant step: ownership count drops from one back to zero, and the invariant "at most one owner" is trivially true again.',
+    boxValue: 'belongs to: no one',
+    commit: { value: 'no owner' },
+    structure: { released: true }
+  }
+];
+
+let current = 0;
+
+function el(id) { return document.getElementById(id); }
+
+function buildLegend() {
+  const items = [
+    ['read', 'Blue — Read / input'],
+    ['compute', 'Gray — Compute / transform'],
+    ['write', 'Red — Write / critical outcome'],
+    ['allocate', 'Teal — Allocate / reserve'],
+    ['execute', 'Green — Execute']
+  ];
+  const legend = el('legend');
+  legend.innerHTML = items.map(([type, label]) =>
+    `<div class="legend-item"><div class="legend-swatch" style="background:${COLORS[type]}"></div>${label}</div>`
+  ).join('');
+}
+
+function buildDots() {
+  const dots = el('dots');
+  dots.innerHTML = '';
+  steps.forEach((s, i) => {
+    const b = document.createElement('button');
+    b.className = 'dot';
+    b.setAttribute('aria-label', 'Go to step ' + (i + 1));
+    b.addEventListener('click', () => { current = i; render(); });
+    dots.appendChild(b);
+  });
+}
+
+function chip(label, faded) { return `<div class="chip${faded ? ' faded' : ''}">${label}</div>`; }
+function edge(released) { return `<div class="wait-edge${released ? ' released' : ''}"></div>`; }
+function structureHTML(step) {
+  if (!step.structure) return '';
+  if (step.structure.released) return chip('T', true) + edge(true) + chip('L', true);
+  return chip('T') + edge(false) + chip('L');
+}
+
+function render() {
+  const captionRow = el('caption-row');
+  const s = steps[current];
+  captionRow.innerHTML = `<span>${s.caption}</span>
+    <button class="info-btn" tabindex="0">?
+      <span class="tooltip">${s.tooltip}</span>
+    </button>`;
+
+  el('step-readout').textContent = `Step ${current + 1} / ${steps.length}`;
+  el('btn-back').disabled = current <= 0;
+  el('btn-next').disabled = current === steps.length - 1;
+
+  document.querySelectorAll('.dot').forEach((d, i) => {
+    d.classList.remove('current');
+    d.style.background = (i <= current) ? COLORS[steps[i].type] : '#ccc';
+    if (i === current) d.classList.add('current');
+  });
+
+  const inputPanel = el('input-panel');
+  el('input-value').textContent = s.input;
+  el('input-value').classList.add('set');
+  el('input-sub').textContent = s.inputSub;
+  el('input-tooltip').textContent = s.inputHint || '';
+  inputPanel.classList.toggle('active-read', s.type === 'read');
+
+  document.querySelectorAll('.step-box').forEach(box => box.classList.remove('active'));
+  steps.forEach((st, i) => {
+    if (!st.box) return;
+    const valEl = document.getElementById('v-' + st.box.replace('step-', ''));
+    valEl.textContent = (i <= current) ? '→ ' + st.boxValue : '?';
+    const structEl = document.getElementById('struct-' + st.box.replace('step-', ''));
+    if (structEl) structEl.innerHTML = (i <= current) ? structureHTML(st) : '';
+  });
+  if (steps[current].box) el(steps[current].box).classList.add('active');
+
+  let value = 'no owner';
+  let lastCommitColor = null;
+  for (let i = 0; i <= current; i++) {
+    if (steps[i].commit) { value = steps[i].commit.value; lastCommitColor = COLORS[steps[i].type]; }
+  }
+  const valEl = el('output-value');
+  valEl.textContent = value;
+  valEl.classList.add('set');
+
+  el('output-panel').style.borderColor = lastCommitColor || '#e5e7eb';
+
+  if (steps[current].commit) {
+    const box = el('output-value-box');
+    box.style.setProperty('--flash-color', COLORS[steps[current].type]);
+    box.classList.remove('flash'); void box.offsetWidth; box.classList.add('flash');
+  }
+}
+
+el('btn-next').addEventListener('click', () => { if (current < steps.length - 1) { current++; render(); } });
+el('btn-back').addEventListener('click', () => { if (current > 0) { current--; render(); } });
+
+buildLegend();
+buildDots();
+render();
+</script>
+</body>
+</html>

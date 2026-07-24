@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Thread Deadlock</title>
+<style>
+  :root {
+    --c-read: #2b6cb0;      --c-read-tint: #eaf2fa;
+    --c-compute: #718096;   --c-compute-tint: #f0f2f4;
+    --c-write: #c53030;     --c-write-tint: #fbeaea;
+    --c-lock: #b7791f;      --c-lock-tint: #faf1e0;
+    --c-allocate: #0891b2;  --c-allocate-tint: #e6f6f9;
+    --c-execute: #2f855a;   --c-execute-tint: #eaf5ef;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    max-width: 680px;
+    margin: 32px auto;
+    color: #222222;
+    padding: 0 16px;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  p.sub { font-size: 14px; color: #6b7280; margin: 0 0 20px; }
+
+  .mono { font-family: "SF Mono", Menlo, Consolas, monospace; }
+
+  #widget { position: relative; }
+  #connector-svg {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; overflow: visible;
+  }
+
+  /* legend */
+  .legend {
+    display: flex; gap: 22px; flex-wrap: wrap;
+    background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 12px;
+    padding: 12px 18px; font-size: 13px; color: #444444; margin-bottom: 18px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 7px; }
+  .legend-swatch { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+
+  /* panels */
+  .panel {
+    background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 14px;
+    padding: 16px 18px; margin-bottom: 16px; transition: border-color .3s, background-color .3s;
+  }
+  .panel-label {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px; font-weight: 600; letter-spacing: .06em;
+    color: #9aa1ad; text-transform: uppercase; margin: 4px 0 8px;
+  }
+
+  /* output panel */
+  #output-panel { text-align: center; }
+  .output-cells { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .cell {
+    background: #ffffff; border: 1px solid #e2e5ea; border-radius: 10px;
+    padding: 10px 14px; min-width: 84px; position: relative;
+  }
+  .cell-label {
+    font-size: 10px; letter-spacing: .04em; text-transform: uppercase;
+    color: #8a93a3; margin-bottom: 4px;
+  }
+  .cell-value {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 15px; font-weight: 600; color: #c3c8d1;
+  }
+  .cell-value.set { color: #1a1a1a; }
+  @keyframes flashPulse {
+    0%   { box-shadow: 0 0 0 6px color-mix(in srgb, var(--flash-color) 45%, transparent); }
+    100% { box-shadow: 0 0 0 0px color-mix(in srgb, var(--flash-color) 0%, transparent); }
+  }
+  .flash { animation: flashPulse 0.7s ease-out; }
+
+  /* input panel */
+  #input-panel { text-align: center; border-color: #e5e7eb; }
+  #input-panel.active-read { border-color: var(--c-read); box-shadow: 0 0 0 2px var(--c-read-tint); }
+  .input-label { font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--c-read); margin-bottom: 4px; }
+  .input-value {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 15px; font-weight: 600;
+    color: #1a1a1a;
+  }
+  .input-value-wrap {
+    position: relative; display: inline-block; min-height: 20px; cursor: help;
+  }
+  .input-value-wrap:hover .tooltip, .input-value-wrap:focus .tooltip { display: block; }
+  .input-value-wrap .tooltip { bottom: 26px; }
+  .input-sub { font-size: 11px; color: #8a93a3; margin-top: 2px; }
+
+  /* flow panel */
+  #flow-panel { }
+  .flow-columns { display: flex; gap: 0; align-items: stretch; }
+  .flow-col { flex: 1; min-width: 0; padding: 0 16px; }
+  .flow-col:first-child { padding-left: 0; }
+  .flow-col:last-child { padding-right: 0; border-left: 1px solid #e5e7eb; }
+  .flow-col-title {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; font-weight: 600;
+    letter-spacing: .04em; text-transform: uppercase; color: #8a93a3; margin-bottom: 10px; text-align: center;
+  }
+  .flow-monitor { margin-top: 14px; padding-top: 14px; border-top: 1px solid #e5e7eb; }
+  .flow-monitor .flow-col-title { margin-bottom: 8px; }
+  .step-box {
+    background: #ffffff; border: 1px solid #e2e5ea; border-left: 4px solid var(--step-color, #e2e5ea);
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; font-size: 12px;
+  }
+  .flow-monitor .step-box { margin-bottom: 0; }
+  .step-box .sb-title {
+    font-weight: 600; color: #1a1a1a; margin-bottom: 3px; font-size: 12px;
+    text-transform: uppercase; letter-spacing: .03em; opacity: 0.75;
+  }
+  .step-box .sb-value {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; color: #6b7280; min-height: 16px;
+  }
+  .step-box.active {
+    border-color: var(--step-color);
+    background: var(--step-tint);
+    box-shadow: 0 0 0 1px var(--step-color) inset;
+  }
+  .step-box.type-read      { --step-color: var(--c-read);      --step-tint: var(--c-read-tint); }
+  .step-box.type-compute   { --step-color: var(--c-compute);   --step-tint: var(--c-compute-tint); }
+  .step-box.type-write     { --step-color: var(--c-write);     --step-tint: var(--c-write-tint); }
+  .step-box.type-lock      { --step-color: var(--c-lock);      --step-tint: var(--c-lock-tint); }
+  .step-box.type-allocate  { --step-color: var(--c-allocate);  --step-tint: var(--c-allocate-tint); }
+  .step-box.type-execute   { --step-color: var(--c-execute);   --step-tint: var(--c-execute-tint); }
+
+  .chip {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 3px 8px; border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px; border: 1px solid #444; background: #fff; color: #1a1a1a; flex-shrink: 0;
+  }
+  .wait-edge { height: 0; border-top: 2px dashed var(--c-lock); width: 20px; margin: 0 3px; flex-shrink: 0; }
+  .wait-edge.solid { border-top: 2px solid var(--c-write); }
+  .structure-row { display: flex; align-items: center; gap: 0; margin-top: 6px; flex-wrap: nowrap; }
+  .flow-monitor .structure-row { justify-content: center; margin-top: 8px; }
+  .flow-monitor .chip { font-size: 12px; padding: 4px 10px; }
+  .flow-monitor .wait-edge { width: 26px; }
+
+  /* caption + controls */
+  .caption-row {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    font-size: 14px; color: #444444; margin-top: 4px; min-height: 20px;
+  }
+  .info-btn {
+    width: 17px; height: 17px; border-radius: 50%; border: 1px solid #bbb;
+    background: #f2f2f2; font-size: 11px; line-height: 1; cursor: pointer; position: relative;
+    display: inline-flex; align-items: center; justify-content: center; padding: 0; color: #444;
+  }
+  .tooltip {
+    display: none; position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+    width: 260px; background: #2d3748; color: #fff; border-radius: 6px; padding: 10px 12px;
+    font-size: 12px; line-height: 1.4; z-index: 10; text-align: left;
+  }
+  .tooltip::after {
+    content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+    border: 6px solid transparent; border-top-color: #2d3748;
+  }
+  .info-btn:hover .tooltip, .info-btn:focus .tooltip { display: block; }
+
+  .result-line {
+    font-size: 13px; color: #6b7280; text-align: center; margin-top: 16px;
+  }
+
+  .controls-row {
+    position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 18px;
+  }
+  button.nav-btn {
+    padding: 8px 16px; border: 1px solid #bbb; border-radius: 6px; background: #fff;
+    font-size: 14px; cursor: pointer;
+  }
+  button.nav-btn:disabled { opacity: 0.4; cursor: default; }
+  .dots {
+    display: flex; align-items: center; gap: 9px; flex-wrap: wrap; max-width: 200px;
+  }
+  .dot {
+    width: 10px; height: 10px; border-radius: 50%; background: #ccc; border: none;
+    padding: 0; cursor: pointer; transition: transform .15s;
+  }
+  .dot.current { transform: scale(2); transform-origin: center; }
+  .step-readout {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; color: #6b7280;
+    white-space: nowrap; position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  }
+</style>
+</head>
+<body>
+
+<h1>Thread Deadlock</h1>
+<p class="sub">Two threads each hold one lock and wait forever for the other's lock.</p>
+
+<div id="widget">
+<svg id="connector-svg"></svg>
+
+<div class="legend" id="legend"></div>
+
+<div class="panel" id="output-panel">
+  <div class="panel-label">Output — shared lock state</div>
+  <div class="output-cells">
+    <div class="cell" id="cell-lock1"><div class="cell-label">Lock 1</div><div class="cell-value" id="val-lock1">—</div></div>
+    <div class="cell" id="cell-lock2"><div class="cell-label">Lock 2</div><div class="cell-value" id="val-lock2">—</div></div>
+    <div class="cell" id="cell-threadA"><div class="cell-label">Thread A</div><div class="cell-value" id="val-threadA">—</div></div>
+    <div class="cell" id="cell-threadB"><div class="cell-label">Thread B</div><div class="cell-value" id="val-threadB">—</div></div>
+    <div class="cell" id="cell-status"><div class="cell-label">Status</div><div class="cell-value" id="val-status">—</div></div>
+  </div>
+</div>
+
+<div class="panel" id="input-panel">
+  <div class="panel-label">Input</div>
+  <div class="input-label">reading</div>
+  <div class="input-value-wrap" tabindex="0">
+    <span class="input-value" id="input-value">—</span>
+    <span class="tooltip" id="input-tooltip"></span>
+  </div>
+  <div class="input-sub" id="input-sub">read</div>
+</div>
+
+<div class="panel" id="flow-panel">
+  <div class="panel-label">Flow</div>
+  <div class="flow-columns">
+    <div class="flow-col">
+      <div class="flow-col-title">Thread A</div>
+      <div class="step-box type-allocate" id="step-a-acquire-l1">
+        <div class="sb-title">acquire L1</div>
+        <div class="sb-value" id="v-a-acquire-l1">?</div>
+      </div>
+      <div class="step-box type-execute" id="step-a-request-l2">
+        <div class="sb-title">request L2</div>
+        <div class="sb-value" id="v-a-request-l2">?</div>
+      </div>
+      <div class="step-box type-compute" id="step-a-check-l2">
+        <div class="sb-title">check L2</div>
+        <div class="sb-value" id="v-a-check-l2">?</div>
+      </div>
+      <div class="step-box type-lock" id="step-a-block">
+        <div class="sb-title">block</div>
+        <div class="sb-value" id="v-a-block">?</div>
+        <div class="structure-row" id="struct-a-block"></div>
+      </div>
+    </div>
+    <div class="flow-col">
+      <div class="flow-col-title">Thread B</div>
+      <div class="step-box type-allocate" id="step-b-acquire-l2">
+        <div class="sb-title">acquire L2</div>
+        <div class="sb-value" id="v-b-acquire-l2">?</div>
+      </div>
+      <div class="step-box type-execute" id="step-b-request-l1">
+        <div class="sb-title">request L1</div>
+        <div class="sb-value" id="v-b-request-l1">?</div>
+      </div>
+      <div class="step-box type-compute" id="step-b-check-l1">
+        <div class="sb-title">check L1</div>
+        <div class="sb-value" id="v-b-check-l1">?</div>
+      </div>
+      <div class="step-box type-lock" id="step-b-block">
+        <div class="sb-title">block</div>
+        <div class="sb-value" id="v-b-block">?</div>
+        <div class="structure-row" id="struct-b-block"></div>
+      </div>
+    </div>
+  </div>
+  <div class="flow-monitor">
+    <div class="flow-col-title">Monitor</div>
+    <div class="step-box type-write" id="step-sys-detect">
+      <div class="sb-title">detect cycle</div>
+      <div class="sb-value" id="v-sys-detect">?</div>
+      <div class="structure-row" id="struct-sys-detect"></div>
+    </div>
+  </div>
+</div>
+
+<div class="caption-row" id="caption-row"></div>
+<div class="result-line">Result: A holds Lock 1 and waits for Lock 2, B holds Lock 2 and waits for Lock 1 — neither can ever proceed.</div>
+
+<div class="controls-row">
+  <button class="nav-btn" id="btn-back">Back</button>
+  <div class="dots" id="dots"></div>
+  <div class="step-readout" id="step-readout">Step 0 / 10</div>
+  <button class="nav-btn" id="btn-next">Next</button>
+</div>
+
+</div>
+
+<script>
+const COLORS = {
+  read: '#2b6cb0', compute: '#718096', write: '#c53030',
+  lock: '#b7791f', allocate: '#0891b2', execute: '#2f855a'
+};
+
+const steps = [
+  {
+    type: 'read', box: null,
+    caption: 'Load thread instructions',
+    tooltip: 'Two threads are about to run. Thread A will lock L1, then try to lock L2. Thread B will lock L2, then try to lock L1 — the opposite order.',
+    input: 'A: L1 → L2  |  B: L2 → L1', inputSub: 'read',
+    inputHint: '"→" means "then": A locks L1, then L2. B locks L2, then L1 — the opposite order. That mismatch is what makes the deadlock possible.',
+    commit: null
+  },
+  {
+    type: 'allocate', box: 'step-a-acquire-l1',
+    caption: 'Thread A acquires Lock 1',
+    tooltip: 'A "lock" (or mutex) is acquired to protect a resource so only one thread can use it at a time. Thread A successfully grabs Lock 1 — nothing else holds it yet.',
+    input: 'A.lock(L1)', inputSub: 'read',
+    inputHint: '"A.lock(L1)" means "Thread A calls lock() on L1" — the standard way to write a lock request.',
+    boxValue: 'granted',
+    commit: { field: 'lock1', value: 'A' }
+  },
+  {
+    type: 'allocate', box: 'step-b-acquire-l2',
+    caption: 'Thread B acquires Lock 2',
+    tooltip: 'Thread B runs concurrently and grabs Lock 2, which is also free. Now each thread owns exactly one of the two locks.',
+    input: 'B.lock(L2)', inputSub: 'read',
+    inputHint: '"B.lock(L2)" means "Thread B calls lock() on L2" — same notation, different thread and lock.',
+    boxValue: 'granted',
+    commit: { field: 'lock2', value: 'B' }
+  },
+  {
+    type: 'execute', box: 'step-a-request-l2',
+    caption: 'Thread A requests Lock 2 next',
+    tooltip: 'Thread A now needs Lock 2 to continue its work, so it asks to acquire it — while still holding Lock 1.',
+    input: 'A.lock(L2)', inputSub: 'read',
+    inputHint: 'Same notation as before: A now calls lock() on L2, its second requested lock, while still holding L1.',
+    boxValue: 'target: L2',
+    commit: null
+  },
+  {
+    type: 'compute', box: 'step-a-check-l2',
+    caption: 'Check: is Lock 2 free?',
+    tooltip: 'Before granting a lock, the runtime checks its owner. Lock 2 is currently held by Thread B, so it is not free.',
+    input: 'owner(L2) == ?', inputSub: 'compute',
+    inputHint: '"owner(L2)" asks "who currently holds Lock 2?" The "== ?" means the runtime is checking that against the requester before granting it.',
+    boxValue: 'held by B',
+    commit: null,
+    connector: { from: 'step-a-check-l2', to: 'step-b-acquire-l2', label: 'L2 held by B' }
+  },
+  {
+    type: 'lock', box: 'step-a-block',
+    caption: 'Thread A blocks, waiting for Lock 2',
+    tooltip: 'Since Lock 2 is unavailable, Thread A pauses ("blocks") and waits. It will not release Lock 1 while it waits.',
+    input: 'A: WAITING(L2)', inputSub: 'read',
+    inputHint: '"WAITING(L2)" is Thread A\'s status: it is paused, parked in a queue for Lock 2, doing no other work until it\'s granted.',
+    boxValue: 'waiting on L2',
+    commit: { field: 'threadA', value: 'BLOCKED' },
+    structure: { from: 'A', to: 'L2 (B)', style: 'dotted' }
+  },
+  {
+    type: 'execute', box: 'step-b-request-l1',
+    caption: 'Thread B requests Lock 1 next',
+    tooltip: 'Symmetrically, Thread B now needs Lock 1 to continue — while still holding Lock 2.',
+    input: 'B.lock(L1)', inputSub: 'read',
+    inputHint: 'B now calls lock() on L1, its second requested lock, while still holding L2.',
+    boxValue: 'target: L1',
+    commit: null
+  },
+  {
+    type: 'compute', box: 'step-b-check-l1',
+    caption: 'Check: is Lock 1 free?',
+    tooltip: 'The runtime checks Lock 1\'s owner. It is held by Thread A, so it is not free either.',
+    input: 'owner(L1) == ?', inputSub: 'compute',
+    inputHint: '"owner(L1)" asks "who currently holds Lock 1?" — the same kind of ownership check as before, now for the other lock.',
+    boxValue: 'held by A',
+    commit: null,
+    connector: { from: 'step-b-check-l1', to: 'step-a-acquire-l1', label: 'L1 held by A' }
+  },
+  {
+    type: 'lock', box: 'step-b-block',
+    caption: 'Thread B blocks, waiting for Lock 1',
+    tooltip: 'Thread B now also pauses and waits, holding Lock 2 while it waits for Lock 1.',
+    input: 'B: WAITING(L1)', inputSub: 'read',
+    inputHint: 'Same status notation as A\'s: Thread B is now paused, parked waiting for Lock 1.',
+    boxValue: 'waiting on L1',
+    commit: { field: 'threadB', value: 'BLOCKED' },
+    structure: { from: 'B', to: 'L1 (A)', style: 'dotted' }
+  },
+  {
+    type: 'write', box: 'step-sys-detect',
+    caption: 'Circular wait: DEADLOCK',
+    tooltip: 'A waits for a lock B holds, and B waits for a lock A holds. This closed loop is a circular wait — the defining condition of deadlock. Neither thread can ever make progress.',
+    input: 'cycle: A→L2→B→L1→A', inputSub: 'read',
+    inputHint: 'Reading this chain left to right: A waits for L2, which B holds; B waits for L1, which A holds — and that loops back to A. A closed loop like this is a "cycle," and it\'s the signature of deadlock.',
+    boxValue: 'cycle confirmed',
+    commit: { field: 'status', value: 'DEADLOCK' },
+    structure: { cycle: true },
+    connector: { from: 'step-a-block', to: 'step-b-block', label: 'circular wait' }
+  }
+];
+
+let current = 0; // start on step 1
+const flashHistory = {}; // field -> last flashed step index (not used further, just placeholder)
+let lastCommitColor = null;
+let connectorHistory = []; // list of {step index, connector}
+
+function el(id) { return document.getElementById(id); }
+
+function buildLegend() {
+  const items = [
+    ['read', 'Blue — Read / input'],
+    ['compute', 'Gray — Compute / transform'],
+    ['write', 'Red — Write / critical outcome'],
+    ['lock', 'Amber — Lock / wait / synchronization'],
+    ['allocate', 'Teal — Allocate / reserve'],
+    ['execute', 'Green — Execute']
+  ];
+  const legend = el('legend');
+  legend.innerHTML = items.map(([type, label]) =>
+    `<div class="legend-item"><div class="legend-swatch" style="background:${COLORS[type]}"></div>${label}</div>`
+  ).join('');
+}
+
+function buildDots() {
+  const dots = el('dots');
+  dots.innerHTML = '';
+  steps.forEach((s, i) => {
+    const b = document.createElement('button');
+    b.className = 'dot';
+    b.setAttribute('aria-label', 'Go to step ' + (i + 1));
+    b.addEventListener('click', () => { current = i; render(); });
+    dots.appendChild(b);
+  });
+}
+
+function chip(label) {
+  return `<div class="chip">${label}</div>`;
+}
+function edge(solid) {
+  return `<div class="wait-edge${solid ? ' solid' : ''}"></div>`;
+}
+
+function structureHTML(step) {
+  if (!step.structure) return '';
+  if (step.structure.cycle) {
+    return chip('A') + edge(true) + chip('L2') + edge(true) + chip('B') + edge(true) + chip('L1') + edge(true) + chip('A');
+  }
+  return chip(step.structure.from) + edge(step.structure.style === 'solid') + chip(step.structure.to);
+}
+
+function render() {
+  // caption + info
+  const captionRow = el('caption-row');
+  if (current === -1) {
+    captionRow.innerHTML = `<span>Press next to start.</span>`;
+  } else {
+    const s = steps[current];
+    captionRow.innerHTML = `<span>${s.caption}</span>
+      <button class="info-btn" tabindex="0">?
+        <span class="tooltip">${s.tooltip}</span>
+      </button>`;
+  }
+
+  // step readout
+  el('step-readout').textContent = `Step ${current + 1 > 0 ? current + 1 : 0} / ${steps.length}`;
+
+  // nav buttons
+  el('btn-back').disabled = current <= 0;
+  el('btn-next').disabled = current === steps.length - 1;
+
+  // dots
+  const dotEls = document.querySelectorAll('.dot');
+  dotEls.forEach((d, i) => {
+    d.classList.remove('current');
+    if (i <= current) {
+      d.style.background = COLORS[steps[i].type];
+    } else {
+      d.style.background = '#ccc';
+    }
+    if (i === current) d.classList.add('current');
+  });
+
+  // input panel
+  const inputPanel = el('input-panel');
+  if (current === -1) {
+    el('input-value').textContent = '—';
+    el('input-value').classList.remove('set');
+    el('input-sub').textContent = 'read';
+    el('input-tooltip').textContent = '';
+    inputPanel.classList.remove('active-read');
+  } else {
+    const s = steps[current];
+    el('input-value').textContent = s.input;
+    el('input-value').classList.add('set');
+    el('input-sub').textContent = s.inputSub;
+    el('input-tooltip').textContent = s.inputHint || '';
+    inputPanel.classList.toggle('active-read', s.type === 'read');
+  }
+
+  // reset flow boxes to inactive + placeholders / restore values up to current
+  document.querySelectorAll('.step-box').forEach(box => box.classList.remove('active'));
+  steps.forEach((s, i) => {
+    if (!s.box) return;
+    const valEl = el('v-' + s.box.replace('step-', ''));
+    if (i <= current) {
+      valEl.textContent = '→ ' + s.boxValue;
+    } else {
+      valEl.textContent = '?';
+    }
+    const structEl = document.getElementById('struct-' + s.box.replace('step-', ''));
+    if (structEl) {
+      structEl.innerHTML = (i <= current && s.structure) ? structureHTML(s) : '';
+    }
+  });
+  if (current >= 0 && steps[current].box) {
+    el(steps[current].box).classList.add('active');
+  }
+
+  // output panel commits (recompute full state from all commits up to current)
+  const state = { lock1: '—', lock2: '—', threadA: '—', threadB: '—', status: 'OK' };
+  let lastCommit = null;
+  for (let i = 0; i <= current; i++) {
+    if (steps[i].commit) {
+      state[steps[i].commit.field] = steps[i].commit.value;
+      lastCommit = { step: i, field: steps[i].commit.field, color: COLORS[steps[i].type] };
+    }
+  }
+  ['lock1', 'lock2', 'threadA', 'threadB', 'status'].forEach(f => {
+    const valEl = el('val-' + f);
+    valEl.textContent = state[f];
+    valEl.classList.toggle('set', state[f] !== '—');
+  });
+
+  const outputPanel = el('output-panel');
+  if (lastCommit) {
+    outputPanel.style.borderColor = lastCommit.color;
+  } else {
+    outputPanel.style.borderColor = '#e5e7eb';
+  }
+
+  // flash only if current step itself is a commit
+  if (current >= 0 && steps[current].commit) {
+    const field = steps[current].commit.field;
+    const color = COLORS[steps[current].type];
+    const cellEl = el('cell-' + field);
+    cellEl.style.setProperty('--flash-color', color);
+    cellEl.classList.remove('flash');
+    void cellEl.offsetWidth;
+    cellEl.classList.add('flash');
+  }
+
+  drawConnectors();
+}
+
+function drawConnectors() {
+  const svg = el('connector-svg');
+  const widget = el('widget');
+  svg.innerHTML = '';
+  const wRect = widget.getBoundingClientRect();
+
+  // determine active connectors up to current step, in trigger order
+  const active = [];
+  steps.forEach((s, i) => {
+    if (s.connector && i <= current) active.push({ step: i, c: s.connector });
+  });
+  // most recent last -> assign opacity by recency
+  const ordered = [...active].sort((a, b) => b.step - a.step);
+  const opacityFor = {};
+  ordered.forEach((item, idx) => {
+    opacityFor[item.step] = idx === 0 ? 1 : (idx === 1 ? 0.5 : 0.25);
+  });
+
+  active.forEach(item => {
+    const fromEl = document.getElementById(item.c.from);
+    const toEl = document.getElementById(item.c.to);
+    if (!fromEl || !toEl) return;
+    const fr = fromEl.getBoundingClientRect();
+    const tr = toEl.getBoundingClientRect();
+    const x1 = fr.left + fr.width / 2 - wRect.left;
+    const y1 = fr.top + fr.height / 2 - wRect.top;
+    const x2 = tr.left + tr.width / 2 - wRect.left;
+    const y2 = tr.top + tr.height / 2 - wRect.top;
+
+    const ns = 'http://www.w3.org/2000/svg';
+    const path = document.createElementNS(ns, 'path');
+    const midX = (x1 + x2) / 2;
+    const midY = (y1 + y2) / 2;
+    path.setAttribute('d', `M ${x1} ${y1} Q ${midX} ${midY - 20} ${x2} ${y2}`);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', '#6b7280');
+    path.setAttribute('stroke-width', '1.3');
+    path.setAttribute('stroke-dasharray', '3 3');
+    path.style.opacity = opacityFor[item.step];
+    svg.appendChild(path);
+
+    // label with halo
+    const label = wrapLabel(item.c.label, 22);
+    const lineHeight = 12;
+    const text = document.createElementNS(ns, 'text');
+    text.setAttribute('x', midX);
+    text.setAttribute('y', midY - 20 - (label.length - 1) * lineHeight / 2);
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('font-family', '"SF Mono", Menlo, Consolas, monospace');
+    text.setAttribute('font-size', '10');
+    text.setAttribute('fill', '#444444');
+    text.style.opacity = opacityFor[item.step];
+    label.forEach((line, i) => {
+      const tspan = document.createElementNS(ns, 'tspan');
+      tspan.setAttribute('x', midX);
+      tspan.setAttribute('dy', i === 0 ? 0 : lineHeight);
+      tspan.textContent = line;
+      text.appendChild(tspan);
+    });
+    svg.appendChild(text);
+
+    // halo rect behind, sized via getBBox after insertion
+    requestAnimationFrame(() => {
+      try {
+        const bbox = text.getBBox();
+        const rect = document.createElementNS(ns, 'rect');
+        rect.setAttribute('x', bbox.x - 4);
+        rect.setAttribute('y', bbox.y - 2);
+        rect.setAttribute('width', bbox.width + 8);
+        rect.setAttribute('height', bbox.height + 4);
+        rect.setAttribute('rx', 3);
+        rect.setAttribute('fill', '#f7f8fa');
+        rect.setAttribute('stroke', '#e5e7eb');
+        rect.style.opacity = opacityFor[item.step];
+        svg.insertBefore(rect, text);
+      } catch (e) { /* ignore if not yet measurable */ }
+    });
+  });
+}
+
+function wrapLabel(text, maxChars) {
+  const words = text.split(' ');
+  const lines = [];
+  let line = '';
+  words.forEach(w => {
+    if ((line + ' ' + w).trim().length > maxChars) {
+      lines.push(line.trim());
+      line = w;
+    } else {
+      line = (line + ' ' + w).trim();
+    }
+  });
+  if (line) lines.push(line);
+  return lines;
+}
+
+el('btn-next').addEventListener('click', () => {
+  if (current < steps.length - 1) { current++; render(); }
+});
+el('btn-back').addEventListener('click', () => {
+  if (current > 0) { current--; render(); }
+});
+window.addEventListener('resize', () => drawConnectors());
+
+buildLegend();
+buildDots();
+render();
+</script>
+</body>
+</html>
