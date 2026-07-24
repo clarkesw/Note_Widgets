@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Explicit Locks</title>
+<style>
+
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    max-width: 760px; margin: 32px auto; padding: 0 16px; color: #222222; background: #ffffff;
+  }
+  h1.shell-title { font-size: 22px; font-weight: 700; margin: 0 0 4px; }
+  p.shell-sub { font-size: 14px; color: #6b7280; margin: 0 0 20px; }
+  .tab-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; }
+  .tab-btn {
+    padding: 8px 14px; border: 1px solid #e2e5ea; border-radius: 8px;
+    background: #f7f8fa; color: #444444; font-size: 13px; font-weight: 500;
+    cursor: pointer; font-family: inherit;
+  }
+  .tab-btn.active { background: #2b6cb0; color: #ffffff; border-color: #2b6cb0; }
+  .tab-btn:hover:not(.active) { background: #eef0f3; }
+  .tabpanel { display: none; }
+  .tabpanel.active { display: block; }
+
+/* --- ReentrantLock widget styles --- */
+
+  :root {
+    --c-read: #2b6cb0;      --c-read-tint: #eaf2fa;
+    --c-write: #c53030;     --c-write-tint: #fbeaea;
+    --c-allocate: #0891b2;  --c-allocate-tint: #e6f6f9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    max-width: 680px;
+    margin: 32px auto;
+    color: #222222;
+    padding: 0 16px;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  p.sub { font-size: 14px; color: #6b7280; margin: 0 0 20px; }
+
+  .mono { font-family: "SF Mono", Menlo, Consolas, monospace; }
+
+  #widget { position: relative; }
+
+  .legend {
+    display: flex; gap: 22px; flex-wrap: wrap;
+    background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 12px;
+    padding: 12px 18px; font-size: 13px; color: #444444; margin-bottom: 18px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 7px; }
+  .legend-swatch { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+
+  .panel {
+    background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 14px;
+    padding: 16px 18px; margin-bottom: 16px; transition: border-color .3s, background-color .3s;
+  }
+  .panel-label {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px; font-weight: 600; letter-spacing: .06em;
+    color: #9aa1ad; text-transform: uppercase; margin: 4px 0 8px;
+  }
+
+  #output-panel { text-align: center; }
+  .output-single-label {
+    font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: #8a93a3; margin-bottom: 6px;
+  }
+  .output-value-box { display: inline-block; padding: 4px 4px; border-radius: 8px; }
+  .output-value {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 30px; font-weight: 700;
+    color: #1a1a1a; letter-spacing: .02em;
+  }
+  .output-sub { font-size: 11px; color: #8a93a3; margin-top: 4px; }
+  @keyframes flashPulse {
+    0%   { box-shadow: 0 0 0 6px color-mix(in srgb, var(--flash-color) 45%, transparent); }
+    100% { box-shadow: 0 0 0 0px color-mix(in srgb, var(--flash-color) 0%, transparent); }
+  }
+  .flash { animation: flashPulse 0.7s ease-out; }
+
+  #input-panel { text-align: center; border-color: #e5e7eb; }
+  #input-panel.active-read { border-color: var(--c-read); box-shadow: 0 0 0 2px var(--c-read-tint); }
+  .input-label { font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--c-read); margin-bottom: 4px; }
+  .input-value {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 15px; font-weight: 600; color: #1a1a1a;
+  }
+  .input-value-wrap { position: relative; display: inline-block; min-height: 20px; cursor: help; }
+  .input-value-wrap:hover .tooltip, .input-value-wrap:focus .tooltip { display: block; }
+  .input-value-wrap .tooltip { bottom: 26px; }
+  .input-sub { font-size: 11px; color: #8a93a3; margin-top: 2px; }
+
+  #flow-panel { }
+  .setup-note { max-width: 340px; margin: 0 auto 4px; }
+  .setup-note .step-box { opacity: 0.85; }
+  .flow-columns { display: flex; justify-content: center; }
+  .flow-col { flex: 1; max-width: 340px; }
+  .flow-col-title {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 11px; font-weight: 600;
+    letter-spacing: .04em; text-transform: uppercase; color: #8a93a3; margin-bottom: 10px; text-align: center;
+  }
+  .step-box {
+    background: #ffffff; border: 1px solid #e2e5ea; border-left: 4px solid var(--step-color, #e2e5ea);
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; font-size: 12px;
+  }
+  .step-box .sb-title {
+    font-weight: 600; color: #1a1a1a; margin-bottom: 3px; font-size: 12px;
+    text-transform: uppercase; letter-spacing: .03em; opacity: 0.75;
+  }
+  .step-box .sb-value {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px; color: #6b7280; min-height: 16px;
+  }
+  .step-box .sb-note { font-size: 10px; color: #9aa1ad; margin-top: 3px; font-style: italic; }
+  .step-box.active {
+    border-color: var(--step-color); background: var(--step-tint);
+    box-shadow: 0 0 0 1px var(--step-color) inset;
+  }
+  .step-box.type-read      { --step-color: var(--c-read);      --step-tint: var(--c-read-tint); }
+  .step-box.type-write     { --step-color: var(--c-write);     --step-tint: var(--c-write-tint); }
+  .step-box.type-allocate  { --step-color: var(--c-allocate);  --step-tint: var(--c-allocate-tint); }
+
+  .chip {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 3px 8px; border-radius: 6px; font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px; border: 1px solid #444; background: #fff; color: #1a1a1a; flex-shrink: 0;
+  }
+  .chip.faded { opacity: 0.4; }
+  .wait-edge { height: 0; border-top: 2px solid var(--c-allocate); width: 24px; margin: 0 3px; flex-shrink: 0; }
+  .wait-edge.released { border-top-color: var(--c-write); }
+  .structure-row { display: flex; align-items: center; gap: 0; margin-top: 6px; flex-wrap: nowrap; justify-content: center; }
+
+  .caption-row {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    font-size: 14px; color: #444444; margin-top: 4px; min-height: 20px;
+  }
+  .info-btn {
+    width: 17px; height: 17px; border-radius: 50%; border: 1px solid #bbb;
+    background: #f2f2f2; font-size: 11px; line-height: 1; cursor: pointer; position: relative;
+    display: inline-flex; align-items: center; justify-content: center; padding: 0; color: #444;
+  }
+  .tooltip {
+    display: none; position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+    width: 260px; background: #2d3748; color: #fff; border-radius: 6px; padding: 10px 12px;
+    font-size: 12px; line-height: 1.4; z-index: 10; text-align: left;
+  }
+  .tooltip::after {
+    content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+    border: 6px solid transparent; border-top-color: #2d3748;
+  }
+  .info-btn:hover .tooltip, .info-btn:focus .tooltip { display: block; }
+
+  .result-line { font-size: 13px; color: #6b7280; text-align: center; margin-top: 16px; }
+
+  .controls-row {
+    position: relative; display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 18px;
+  }
+  button.nav-btn {
+    padding: 8px 16px; border: 1px solid #bbb; border-radius: 6px; background: #fff;
+    font-size: 14px; cursor: pointer;
+  }
+  button.nav-btn:disabled { opacity: 0.4; cursor: default; }
+  .dots { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; max-width: 200px; }
+  .dot {
+    width: 10px; height: 10px; border-radius: 50%; background: #ccc; border: none;
+    padding: 0; cursor: pointer; transition: transform .15s;
+  }
+  .dot.current { transform: scale(2); transform-origin: center; }
+  .step-readout {
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 12px; color: #6b7280;
+    white-space: nowrap; position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  }
+
+</style>
+</head>
+<body>
+
+<h1 class="shell-title">Explicit Locks</h1>
+<p class="shell-sub">Lock objects you acquire and release yourself, separate from whatever they protect.</p>
+
+<!-- Add more tab buttons here as new explicit-lock widgets are built (Semaphore, ReadWriteLock, etc.) -->
+<div class="tab-row" id="tab-row">
+  <button class="tab-btn active" data-tab="reentrantlock">ReentrantLock</button>
+</div>
+
+<h1>ReentrantLock Acquisition</h1>
+<p class="sub">A separate lock object that T must acquire and release itself — nothing happens automatically.</p>
+
+<div id="widget-reentrantlock" class="tabpanel active">
+
+<div class="legend" id="legend"></div>
+
+<div class="panel" id="output-panel">
+  <div class="output-single-label">lock</div>
+  <div class="output-value-box" id="output-value-box">
+    <div class="output-value" id="output-value">no owner</div>
+  </div>
+  <div class="output-sub">belongs to</div>
+</div>
+
+<div class="panel" id="input-panel">
+  <div class="panel-label">Input</div>
+  <div class="input-label">reading</div>
+  <div class="input-value-wrap" tabindex="0">
+    <span class="input-value" id="input-value">—</span>
+    <span class="tooltip" id="input-tooltip"></span>
+  </div>
+  <div class="input-sub" id="input-sub">read</div>
+</div>
+
+<div class="panel" id="flow-panel">
+  <div class="panel-label">Flow</div>
+  <div class="setup-note" id="setup-note">
+    <div class="step-box type-read" id="step-create">
+      <div class="sb-title">create lock (setup — not T's action)</div>
+      <div class="sb-value" id="v-create">?</div>
+    </div>
+  </div>
+  <div class="flow-columns">
+    <div class="flow-col">
+      <div class="flow-col-title">Thread T</div>
+      <div class="step-box type-allocate" id="step-lock">
+        <div class="sb-title">lock()</div>
+        <div class="sb-value" id="v-lock">?</div>
+        <div class="structure-row" id="struct-lock"></div>
+        <div class="sb-note">↑ commits output</div>
+      </div>
+      <div class="step-box type-write" id="step-critical">
+        <div class="sb-title">critical section</div>
+        <div class="sb-value" id="v-critical">?</div>
+        <div class="sb-note">no output change</div>
+      </div>
+      <div class="step-box type-write" id="step-unlock">
+        <div class="sb-title">unlock()</div>
+        <div class="sb-value" id="v-unlock">?</div>
+        <div class="structure-row" id="struct-unlock"></div>
+        <div class="sb-note">↑ commits output</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="caption-row" id="caption-row"></div>
+<div class="result-line">Result: nothing releases a ReentrantLock for you — skip unlock() (or skip the try/finally around it) and the lock stays held forever, even after an exception.</div>
+
+<div class="controls-row">
+  <button class="nav-btn" id="btn-back">Back</button>
+  <div class="dots" id="dots"></div>
+  <div class="step-readout" id="step-readout">Step 1 / 4</div>
+  <button class="nav-btn" id="btn-next">Next</button>
+</div>
+
+</div>
+
+<script>
+document.querySelectorAll('#tab-row .tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#tab-row .tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tabpanel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('widget-' + btn.dataset.tab).classList.add('active');
+  });
+});
+</script>
+
+<script>
+(function(){
+  const root = document.getElementById('widget-reentrantlock');
+  const $id = (id) => root.querySelector('#' + id);
+
+const COLORS = { read: '#2b6cb0', write: '#c53030', allocate: '#0891b2' };
+
+const steps = [
+  {
+    type: 'read', box: 'step-create',
+    caption: 'The lock already exists — T didn\'t create it',
+    tooltip: 'A ReentrantLock is normally created once, up front — as a field on whatever object needs it — often before any thread that will use it even exists. T isn\'t the one constructing it; T just receives a reference to it and calls methods on it.',
+    input: 'ReentrantLock lock = new ReentrantLock();', inputSub: 'construct',
+    inputHint: 'This is a real constructor call — java.util.concurrent.locks.ReentrantLock\'s no-arg constructor — but it\'s shown here as shared setup, not as something T does. Whichever code owns this line runs once; T\'s own story starts at lock().',
+    boxValue: 'created, unowned (by setup code)',
+    commit: null
+  },
+  {
+    type: 'allocate', box: 'step-lock',
+    caption: 'T acquires the lock explicitly',
+    tooltip: 'lock() is a real, callable method — java.util.concurrent.locks.ReentrantLock.lock(). It blocks until the lock is free, then grants it. Here it\'s free, so T gets it immediately.',
+    input: 'lock.lock();', inputSub: 'call',
+    inputHint: 'Unlike synchronized(L), there is no special keyword — this is just a normal method call on the lock object. One call does the request-and-grant that took two conceptual steps in the theory widget.',
+    boxValue: 'belongs to: T',
+    commit: { value: 'T' },
+    structure: { released: false }
+  },
+  {
+    type: 'write', box: 'step-critical',
+    caption: 'T runs the protected code',
+    tooltip: 'With the lock held, T\'s critical section runs. The lock has no idea what this code does — it only knows that exactly one thread may run it at a time.',
+    input: '/* protected work runs here */', inputSub: 'read',
+    inputHint: 'This is a comment, not a real API call — it stands in for whatever code T actually needs to run under exclusion. The lock object and the protected code are two separate things.',
+    boxValue: 'runs exclusively',
+    commit: null
+  },
+  {
+    type: 'write', box: 'step-unlock',
+    caption: 'T must release manually',
+    tooltip: 'unlock() — java.util.concurrent.locks.ReentrantLock.unlock() — is a real method T has to call itself. Nothing releases the lock automatically, not even when the surrounding method returns. If T forgets, or an exception is thrown before this line runs, the lock stays held forever. That\'s why real code always wraps this in try { lock.lock(); ... } finally { lock.unlock(); }.',
+    input: 'lock.unlock();', inputSub: 'call',
+    inputHint: 'Compare this to the earlier Java widget, where "}" released the lock for you automatically. Here, forgetting this one line is a real, common bug.',
+    boxValue: 'belongs to: no one',
+    commit: { value: 'no owner' },
+    structure: { released: true }
+  }
+];
+
+let current = 0;
+
+function el(id) { return $id(id); }
+
+function buildLegend() {
+  const items = [
+    ['read', 'Blue — Read / input'],
+    ['write', 'Red — Write / critical outcome'],
+    ['allocate', 'Teal — Allocate / reserve']
+  ];
+  const legend = el('legend');
+  legend.innerHTML = items.map(([type, label]) =>
+    `<div class="legend-item"><div class="legend-swatch" style="background:${COLORS[type]}"></div>${label}</div>`
+  ).join('');
+}
+
+function buildDots() {
+  const dots = el('dots');
+  dots.innerHTML = '';
+  steps.forEach((s, i) => {
+    const b = document.createElement('button');
+    b.className = 'dot';
+    b.setAttribute('aria-label', 'Go to step ' + (i + 1));
+    b.addEventListener('click', () => { current = i; render(); });
+    dots.appendChild(b);
+  });
+}
+
+function chip(label, faded) { return `<div class="chip${faded ? ' faded' : ''}">${label}</div>`; }
+function edge(released) { return `<div class="wait-edge${released ? ' released' : ''}"></div>`; }
+function structureHTML(step) {
+  if (!step.structure) return '';
+  if (step.structure.released) return chip('T', true) + edge(true) + chip('lock', true);
+  return chip('T') + edge(false) + chip('lock');
+}
+
+function render() {
+  const captionRow = el('caption-row');
+  const s = steps[current];
+  captionRow.innerHTML = `<span>${s.caption}</span>
+    <button class="info-btn" tabindex="0">?
+      <span class="tooltip">${s.tooltip}</span>
+    </button>`;
+
+  el('step-readout').textContent = `Step ${current + 1} / ${steps.length}`;
+  el('btn-back').disabled = current <= 0;
+  el('btn-next').disabled = current === steps.length - 1;
+
+  root.querySelectorAll('.dot').forEach((d, i) => {
+    d.classList.remove('current');
+    d.style.background = (i <= current) ? COLORS[steps[i].type] : '#ccc';
+    if (i === current) d.classList.add('current');
+  });
+
+  const inputPanel = el('input-panel');
+  el('input-value').textContent = s.input;
+  el('input-sub').textContent = s.inputSub;
+  el('input-tooltip').textContent = s.inputHint || '';
+  inputPanel.classList.toggle('active-read', s.type === 'read');
+
+  root.querySelectorAll('.step-box').forEach(box => box.classList.remove('active'));
+  steps.forEach((st, i) => {
+    const valEl = $id('v-' + st.box.replace('step-', ''));
+    valEl.textContent = (i <= current) ? '→ ' + st.boxValue : '?';
+    const structEl = $id('struct-' + st.box.replace('step-', ''));
+    if (structEl) structEl.innerHTML = (i <= current) ? structureHTML(st) : '';
+  });
+  el(steps[current].box).classList.add('active');
+
+  let value = 'no owner';
+  let lastCommitColor = null;
+  for (let i = 0; i <= current; i++) {
+    if (steps[i].commit) { value = steps[i].commit.value; lastCommitColor = COLORS[steps[i].type]; }
+  }
+  el('output-value').textContent = value;
+  el('output-panel').style.borderColor = lastCommitColor || '#e5e7eb';
+
+  if (steps[current].commit) {
+    const box = el('output-value-box');
+    box.style.setProperty('--flash-color', COLORS[steps[current].type]);
+    box.classList.remove('flash'); void box.offsetWidth; box.classList.add('flash');
+  }
+}
+
+el('btn-next').addEventListener('click', () => { if (current < steps.length - 1) { current++; render(); } });
+el('btn-back').addEventListener('click', () => { if (current > 0) { current--; render(); } });
+
+buildLegend();
+buildDots();
+render();
+
+})();
+</script>
+
+</body>
+</html>
