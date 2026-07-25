@@ -111,6 +111,7 @@
     "Testing"
   ];
   const UNCATEGORIZED = "Uncategorized";
+  const EXCLUDED_FOLDERS = ["old"]; // top-level folder names to skip entirely (case-insensitive)
 
   const statusEl = document.getElementById("list-status");
   const categoriesEl = document.getElementById("categories");
@@ -166,7 +167,8 @@
           const filename = parts[parts.length - 1];
           const category = parts.length > 1 ? parts[0] : UNCATEGORIZED;
           return { path: e.path, filename, category };
-        });
+        })
+        .filter(w => !EXCLUDED_FOLDERS.some(f => f.toLowerCase() === w.category.toLowerCase()));
 
       if (widgets.length === 0) {
         statusEl.textContent = "No widgets found in this repo yet.";
