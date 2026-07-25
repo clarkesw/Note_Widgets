@@ -42,8 +42,13 @@
   p.sub { font-size: 14px; color: #6b7280; margin: 0 0 20px; }
 
   .mono { font-family: "SF Mono", Menlo, Consolas, monospace; }
+  p.variant-note { font-size: 13px; color: #6b7280; margin: 0 0 20px; }
 
-  #widget { position: relative; }
+  #widget-reentrantlock { position: relative; }
+  #connector-svg {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; overflow: visible;
+  }
 
   .legend {
     display: flex; gap: 22px; flex-wrap: wrap;
@@ -81,18 +86,14 @@
 
   #input-panel { text-align: center; border-color: #e5e7eb; }
   #input-panel.active-read { border-color: var(--c-read); box-shadow: 0 0 0 2px var(--c-read-tint); }
-  .input-label { font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--c-read); margin-bottom: 4px; }
+  .input-label-row { display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 4px; }
+  .input-label { font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--c-read); }
   .input-value {
     font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 15px; font-weight: 600; color: #1a1a1a;
   }
-  .input-value-wrap { position: relative; display: inline-block; min-height: 20px; cursor: help; }
-  .input-value-wrap:hover .tooltip, .input-value-wrap:focus .tooltip { display: block; }
-  .input-value-wrap .tooltip { bottom: 26px; }
   .input-sub { font-size: 11px; color: #8a93a3; margin-top: 2px; }
 
   #flow-panel { }
-  .setup-note { max-width: 340px; margin: 0 auto 4px; }
-  .setup-note .step-box { opacity: 0.85; }
   .flow-columns { display: flex; justify-content: center; }
   .flow-col { flex: 1; max-width: 340px; }
   .flow-col-title {
@@ -126,7 +127,7 @@
   }
   .chip.faded { opacity: 0.4; }
   .wait-edge { height: 0; border-top: 2px solid var(--c-allocate); width: 24px; margin: 0 3px; flex-shrink: 0; }
-  .wait-edge.released { border-top-color: var(--c-write); }
+  .wait-edge.released { border-top: 2px dashed var(--c-write); }
   .structure-row { display: flex; align-items: center; gap: 0; margin-top: 6px; flex-wrap: nowrap; justify-content: center; }
 
   .caption-row {
@@ -184,8 +185,10 @@
 
 <h1>ReentrantLock Acquisition</h1>
 <p class="sub">A separate lock object that T must acquire and release itself — nothing happens automatically.</p>
+<p class="variant-note">Variant shown: <span class="mono">java.util.concurrent.locks.ReentrantLock</span>, Java's default (non-fair) explicit mutual-exclusion lock — the most commonly taught explicit lock, as opposed to <span class="mono">ReadWriteLock</span>, <span class="mono">StampedLock</span>, or <span class="mono">Semaphore</span>.</p>
 
 <div id="widget-reentrantlock" class="tabpanel active">
+<svg id="connector-svg"></svg>
 
 <div class="legend" id="legend"></div>
 
@@ -194,27 +197,23 @@
   <div class="output-value-box" id="output-value-box">
     <div class="output-value" id="output-value">no owner</div>
   </div>
-  <div class="output-sub">belongs to</div>
+  <div class="output-sub">ownership</div>
 </div>
 
 <div class="panel" id="input-panel">
   <div class="panel-label">Input</div>
-  <div class="input-label">reading</div>
-  <div class="input-value-wrap" tabindex="0">
-    <span class="input-value" id="input-value">—</span>
-    <span class="tooltip" id="input-tooltip"></span>
+  <div class="input-label-row">
+    <span class="input-label">reading</span>
+    <button class="info-btn" id="input-info-btn" tabindex="0">?
+      <span class="tooltip" id="input-static-tooltip">Input values here are literal Java statements. <span class="mono">lock.lock()</span> means calling the <span class="mono">lock()</span> method on the <span class="mono">lock</span> object, exactly as you'd type it in real code, semicolon included. A line inside <span class="mono">/* ... */</span> is a comment, not a call — it stands in for whatever code isn't the point of that particular step.</span>
+    </button>
   </div>
+  <div class="input-value" id="input-value">—</div>
   <div class="input-sub" id="input-sub">read</div>
 </div>
 
 <div class="panel" id="flow-panel">
   <div class="panel-label">Flow</div>
-  <div class="setup-note" id="setup-note">
-    <div class="step-box type-read" id="step-create">
-      <div class="sb-title">create lock (setup — not T's action)</div>
-      <div class="sb-value" id="v-create">?</div>
-    </div>
-  </div>
   <div class="flow-columns">
     <div class="flow-col">
       <div class="flow-col-title">Thread T</div>
@@ -271,12 +270,11 @@ const COLORS = { read: '#2b6cb0', write: '#c53030', allocate: '#0891b2' };
 
 const steps = [
   {
-    type: 'read', box: 'step-create',
+    type: 'read', box: null,
     caption: 'The lock already exists — T didn\'t create it',
     tooltip: 'A ReentrantLock is normally created once, up front — as a field on whatever object needs it — often before any thread that will use it even exists. T isn\'t the one constructing it; T just receives a reference to it and calls methods on it.',
     input: 'ReentrantLock lock = new ReentrantLock();', inputSub: 'construct',
     inputHint: 'This is a real constructor call — java.util.concurrent.locks.ReentrantLock\'s no-arg constructor — but it\'s shown here as shared setup, not as something T does. Whichever code owns this line runs once; T\'s own story starts at lock().',
-    boxValue: 'created, unowned (by setup code)',
     commit: null
   },
   {
@@ -292,7 +290,7 @@ const steps = [
   {
     type: 'write', box: 'step-critical',
     caption: 'T runs the protected code',
-    tooltip: 'With the lock held, T\'s critical section runs. The lock has no idea what this code does — it only knows that exactly one thread may run it at a time.',
+    tooltip: 'With the lock held, T\'s critical section — the block of code that must never run on two threads at once — runs now. The lock has no idea what this code does; it only knows that exactly one thread may run it at a time.',
     input: '/* protected work runs here */', inputSub: 'read',
     inputHint: 'This is a comment, not a real API call — it stands in for whatever code T actually needs to run under exclusion. The lock object and the protected code are two separate things.',
     boxValue: 'runs exclusively',
@@ -303,10 +301,11 @@ const steps = [
     caption: 'T must release manually',
     tooltip: 'unlock() — java.util.concurrent.locks.ReentrantLock.unlock() — is a real method T has to call itself. Nothing releases the lock automatically, not even when the surrounding method returns. If T forgets, or an exception is thrown before this line runs, the lock stays held forever. That\'s why real code always wraps this in try { lock.lock(); ... } finally { lock.unlock(); }.',
     input: 'lock.unlock();', inputSub: 'call',
-    inputHint: 'Compare this to the earlier Java widget, where "}" released the lock for you automatically. Here, forgetting this one line is a real, common bug.',
+    inputHint: 'Compare this to code using the synchronized keyword, where the closing "}" releases the lock for you automatically. Here, forgetting this one line is a real, common bug.',
     boxValue: 'belongs to: no one',
     commit: { value: 'no owner' },
-    structure: { released: true }
+    structure: { released: true },
+    connector: { to: 'step-lock', label: 'must match this lock()' }
   }
 ];
 
@@ -349,9 +348,10 @@ function structureHTML(step) {
 function render() {
   const captionRow = el('caption-row');
   const s = steps[current];
+  const fullTooltip = s.tooltip + (s.inputHint ? ' ' + s.inputHint : '');
   captionRow.innerHTML = `<span>${s.caption}</span>
     <button class="info-btn" tabindex="0">?
-      <span class="tooltip">${s.tooltip}</span>
+      <span class="tooltip">${fullTooltip}</span>
     </button>`;
 
   el('step-readout').textContent = `Step ${current + 1} / ${steps.length}`;
@@ -367,17 +367,17 @@ function render() {
   const inputPanel = el('input-panel');
   el('input-value').textContent = s.input;
   el('input-sub').textContent = s.inputSub;
-  el('input-tooltip').textContent = s.inputHint || '';
   inputPanel.classList.toggle('active-read', s.type === 'read');
 
   root.querySelectorAll('.step-box').forEach(box => box.classList.remove('active'));
   steps.forEach((st, i) => {
+    if (!st.box) return;
     const valEl = $id('v-' + st.box.replace('step-', ''));
     valEl.textContent = (i <= current) ? '→ ' + st.boxValue : '?';
     const structEl = $id('struct-' + st.box.replace('step-', ''));
     if (structEl) structEl.innerHTML = (i <= current) ? structureHTML(st) : '';
   });
-  el(steps[current].box).classList.add('active');
+  if (steps[current].box) el(steps[current].box).classList.add('active');
 
   let value = 'no owner';
   let lastCommitColor = null;
@@ -392,10 +392,96 @@ function render() {
     box.style.setProperty('--flash-color', COLORS[steps[current].type]);
     box.classList.remove('flash'); void box.offsetWidth; box.classList.add('flash');
   }
+
+  drawConnectors();
+}
+
+function drawConnectors() {
+  const svg = el('connector-svg');
+  svg.innerHTML = '';
+  const wRect = root.getBoundingClientRect();
+
+  const active = [];
+  steps.forEach((s, i) => { if (s.connector && i <= current) active.push({ step: i, c: s.connector, from: s.box }); });
+  const ordered = [...active].sort((a, b) => b.step - a.step);
+  const opacityFor = {};
+  ordered.forEach((item, idx) => { opacityFor[item.step] = idx === 0 ? 1 : (idx === 1 ? 0.5 : 0.25); });
+
+  active.forEach(item => {
+    const fromEl = el(item.from);
+    const toEl = el(item.c.to);
+    if (!fromEl || !toEl) return;
+    const fr = fromEl.getBoundingClientRect();
+    const tr = toEl.getBoundingClientRect();
+    const x1 = fr.left + fr.width / 2 - wRect.left;
+    const y1 = fr.top + fr.height / 2 - wRect.top;
+    const x2 = tr.left + tr.width / 2 - wRect.left;
+    const y2 = tr.top + tr.height / 2 - wRect.top;
+
+    const ns = 'http://www.w3.org/2000/svg';
+    const path = document.createElementNS(ns, 'path');
+    const midX = (x1 + x2) / 2;
+    const midY = (y1 + y2) / 2;
+    path.setAttribute('d', `M ${x1} ${y1} Q ${midX} ${midY - 16} ${x2} ${y2}`);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', '#6b7280');
+    path.setAttribute('stroke-width', '1.3');
+    path.setAttribute('stroke-dasharray', '3 3');
+    path.style.opacity = opacityFor[item.step];
+    svg.appendChild(path);
+
+    const label = wrapLabel(item.c.label, 22);
+    const lineHeight = 12;
+    const text = document.createElementNS(ns, 'text');
+    text.setAttribute('x', midX);
+    text.setAttribute('y', midY - 16 - (label.length - 1) * lineHeight / 2);
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('font-family', '"SF Mono", Menlo, Consolas, monospace');
+    text.setAttribute('font-size', '10');
+    text.setAttribute('fill', '#444444');
+    text.style.opacity = opacityFor[item.step];
+    label.forEach((line, i) => {
+      const tspan = document.createElementNS(ns, 'tspan');
+      tspan.setAttribute('x', midX);
+      tspan.setAttribute('dy', i === 0 ? 0 : lineHeight);
+      tspan.textContent = line;
+      text.appendChild(tspan);
+    });
+    svg.appendChild(text);
+
+    requestAnimationFrame(() => {
+      try {
+        const bbox = text.getBBox();
+        const rect = document.createElementNS(ns, 'rect');
+        rect.setAttribute('x', bbox.x - 4);
+        rect.setAttribute('y', bbox.y - 2);
+        rect.setAttribute('width', bbox.width + 8);
+        rect.setAttribute('height', bbox.height + 4);
+        rect.setAttribute('rx', 3);
+        rect.setAttribute('fill', '#f7f8fa');
+        rect.setAttribute('stroke', '#e5e7eb');
+        rect.style.opacity = opacityFor[item.step];
+        svg.insertBefore(rect, text);
+      } catch (e) {}
+    });
+  });
+}
+
+function wrapLabel(text, maxChars) {
+  const words = text.split(' ');
+  const lines = [];
+  let line = '';
+  words.forEach(w => {
+    if ((line + ' ' + w).trim().length > maxChars) { lines.push(line.trim()); line = w; }
+    else { line = (line + ' ' + w).trim(); }
+  });
+  if (line) lines.push(line);
+  return lines;
 }
 
 el('btn-next').addEventListener('click', () => { if (current < steps.length - 1) { current++; render(); } });
 el('btn-back').addEventListener('click', () => { if (current > 0) { current--; render(); } });
+window.addEventListener('resize', () => drawConnectors());
 
 buildLegend();
 buildDots();

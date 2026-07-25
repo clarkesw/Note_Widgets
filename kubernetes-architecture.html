@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Kubernetes Architecture</title>
+<style>
+  :root {
+    --panel-surface: #f7f8fa;
+    --panel-border: #e5e7eb;
+    --card-surface: #ffffff;
+    --card-border: #e2e5ea;
+    --text-primary: #1a1a1a;
+    --text-body: #444444;
+    --text-muted: #6b7280;
+    --text-section: #9aa1ad;
+    --placeholder: #c3c8d1;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    max-width: 680px;
+    margin: 32px auto;
+    padding: 0 16px;
+    color: var(--text-body);
+    background: #ffffff;
+  }
+  h1 { font-size: 20px; font-weight: 600; color: var(--text-primary); margin: 0 0 4px; }
+  p.sub { font-size: 14px; color: var(--text-muted); margin: 0 0 20px; }
+
+  .mono { font-family: "SF Mono", Menlo, Consolas, monospace; }
+
+  .widget { position: relative; }
+
+  /* ---- legend ---- */
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 22px;
+    background: var(--panel-surface);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    padding: 12px 18px;
+    font-size: 13px; color: #444444;
+    margin-bottom: 18px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .swatch { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+
+  /* ---- generic panel ---- */
+  .panel {
+    background: var(--panel-surface);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 14px 16px 16px;
+    margin-bottom: 14px;
+  }
+  .section-label {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px; font-weight: 600; letter-spacing: .06em;
+    color: var(--text-section);
+    text-transform: uppercase;
+    margin: 4px 0 8px;
+  }
+
+  /* ---- output panel ---- */
+  .output-cells { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+  .output-cell {
+    background: var(--card-surface);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    min-width: 76px;
+    text-align: center;
+    transition: background .2s, border-color .2s;
+  }
+  .cell-label {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 10px; color: var(--text-muted); margin-bottom: 4px; letter-spacing: .04em;
+  }
+  .cell-value {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12.5px; font-weight: 600; color: var(--text-primary);
+  }
+  .output-cell.type-read { background: #eaf2fa; border-color: #2b6cb0; }
+  .output-cell.type-compute { background: #f0f2f4; border-color: #718096; }
+  .output-cell.type-write { background: #fbeaea; border-color: #c53030; }
+  .output-cell.type-lock { background: #faf3e6; border-color: #b7791f; }
+  .output-cell.type-allocate { background: #e6f6fa; border-color: #0891b2; }
+  .output-cell.type-bind { background: #eceefc; border-color: #4c51bf; }
+  .output-cell.type-execute { background: #eaf5ef; border-color: #2f855a; }
+
+  .output-cell.type-read { --out-color: #2b6cb0; }
+  .output-cell.type-compute { --out-color: #718096; }
+  .output-cell.type-write { --out-color: #c53030; }
+  .output-cell.type-lock { --out-color: #b7791f; }
+  .output-cell.type-allocate { --out-color: #0891b2; }
+  .output-cell.type-bind { --out-color: #4c51bf; }
+  .output-cell.type-execute { --out-color: #2f855a; }
+
+  @keyframes flashPulse {
+    0% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--out-color) 45%, transparent); }
+    100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--out-color) 0%, transparent); }
+  }
+  .flash { animation: flashPulse 0.7s ease-out; }
+
+  /* ---- input panel ---- */
+  .input-label-row { display: flex; align-items: center; gap: 6px; }
+  .input-inner { text-align: center; }
+  .input-card {
+    display: inline-block;
+    background: var(--card-surface);
+    border: 1px solid #2b6cb0;
+    border-radius: 8px;
+    padding: 10px 18px;
+    transition: box-shadow .2s;
+  }
+  .input-panel.active-read .input-card { box-shadow: 0 0 0 3px rgba(43,108,176,.18); }
+  .input-value {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 14px; font-weight: 600; color: #2b6cb0;
+  }
+  .input-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+  /* ---- flow panel ---- */
+  .flow-columns { display: flex; gap: 10px; flex-wrap: wrap; }
+  .flow-col { flex: 1 1 0; min-width: 118px; }
+  .flow-col-title {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--text-section);
+    text-align: center; margin-bottom: 8px;
+  }
+  .step-box {
+    background: var(--card-surface);
+    border: 1px solid var(--card-border);
+    border-left: 4px solid var(--step-color);
+    border-radius: 8px;
+    padding: 7px 8px;
+    margin-bottom: 8px;
+    font-size: 11px;
+    min-height: 44px;
+  }
+  .step-box.active {
+    border-color: var(--step-color);
+    background: var(--step-tint);
+    box-shadow: 0 0 0 1px var(--step-color) inset;
+  }
+  .box-title { color: var(--text-body); font-weight: 600; margin-bottom: 2px; }
+  .box-value {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    color: var(--placeholder);
+    font-size: 10.5px;
+  }
+  .step-box.revealed .box-value { color: var(--text-primary); }
+  .box-note { font-size: 9.5px; color: var(--text-muted); font-style: italic; margin-top: 3px; display: none; }
+  .step-box.revealed .box-note { display: block; }
+
+  .type-read { --step-color: #2b6cb0; --step-tint: #eaf2fa; }
+  .type-compute { --step-color: #718096; --step-tint: #f0f2f4; }
+  .type-write { --step-color: #c53030; --step-tint: #fbeaea; }
+  .type-lock { --step-color: #b7791f; --step-tint: #faf3e6; }
+  .type-allocate { --step-color: #0891b2; --step-tint: #e6f6fa; }
+  .type-bind { --step-color: #4c51bf; --step-tint: #eceefc; }
+  .type-execute { --step-color: #2f855a; --step-tint: #eaf5ef; }
+
+  /* structural chip rows */
+  .chip-row { display: none; align-items: center; gap: 4px; margin-top: 6px; }
+  .step-box.revealed .chip-row { display: flex; }
+  .chip {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 9px; padding: 2px 5px; border-radius: 4px;
+    border: 1px solid var(--step-color); color: var(--step-color);
+  }
+  .chip.muted { border-color: var(--placeholder); color: var(--placeholder); }
+  .chip-link { flex: 0 0 12px; height: 0; border-top: 1.5px dashed var(--placeholder); }
+  .chip-link.solid { border-top: 1.5px solid #4c51bf; }
+
+  /* ---- caption ---- */
+  .caption-row {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    font-size: 14px; color: #444444; margin-top: 4px;
+  }
+  .info-wrap { position: relative; display: inline-flex; }
+  .info-icon {
+    width: 17px; height: 17px; border-radius: 50%;
+    border: 1px solid #bbb; background: #f2f2f2;
+    font-size: 11px; line-height: 15px; text-align: center;
+    cursor: pointer; padding: 0;
+  }
+  .tooltip {
+    display: none; position: absolute; bottom: 135%; left: 50%;
+    transform: translateX(-50%);
+    width: 260px; background: #2d3748; color: #fff;
+    padding: 10px 12px; border-radius: 6px; font-size: 12px; line-height: 1.45;
+    z-index: 20; text-align: left;
+  }
+  .tooltip::after {
+    content: ''; position: absolute; top: 100%; left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent; border-top-color: #2d3748;
+  }
+  .info-wrap:hover .tooltip, .info-wrap:focus-within .tooltip { display: block; }
+
+  /* ---- controls ---- */
+  .controls-row {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    position: relative; margin-top: 14px;
+  }
+  .nav-btn {
+    padding: 8px 16px; border: 1px solid #bbb; border-radius: 6px;
+    background: #fff; font-size: 14px; cursor: pointer;
+  }
+  .nav-btn:disabled { opacity: 0.4; cursor: default; }
+  .dots { display: flex; flex-wrap: wrap; gap: 9px; max-width: 220px; align-items: center; }
+  .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    border: none; padding: 0; cursor: pointer; background: #ccc;
+    transition: transform .15s;
+  }
+  .dot.current { transform: scale(2); transform-origin: center; }
+  .dot.type-read { background: #2b6cb0; }
+  .dot.type-compute { background: #718096; }
+  .dot.type-write { background: #c53030; }
+  .dot.type-lock { background: #b7791f; }
+  .dot.type-allocate { background: #0891b2; }
+  .dot.type-bind { background: #4c51bf; }
+  .dot.type-execute { background: #2f855a; }
+  .readout {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12px; color: var(--text-muted);
+    position: absolute; right: 0;
+  }
+
+  .result-line {
+    font-size: 13px; color: var(--text-muted); text-align: center;
+    margin-top: 16px;
+  }
+
+  #connector-svg { position: absolute; top: 0; left: 0; pointer-events: none; }
+</style>
+</head>
+<body>
+
+<h1>Kubernetes Architecture</h1>
+<p class="sub">How <span class="mono">kubectl apply</span> flows through the control plane and onto a node to run a Pod.</p>
+
+<div class="widget">
+
+  <div class="legend">
+    <div class="legend-item"><span class="swatch" style="background:#2b6cb0"></span>Blue — Read / input</div>
+    <div class="legend-item"><span class="swatch" style="background:#718096"></span>Gray — Compute / transform</div>
+    <div class="legend-item"><span class="swatch" style="background:#c53030"></span>Red — Write / critical outcome</div>
+    <div class="legend-item"><span class="swatch" style="background:#b7791f"></span>Amber — Lock / wait / synchronization</div>
+    <div class="legend-item"><span class="swatch" style="background:#0891b2"></span>Teal — Allocate / reserve</div>
+    <div class="legend-item"><span class="swatch" style="background:#4c51bf"></span>Indigo — Bind / resolve</div>
+    <div class="legend-item"><span class="swatch" style="background:#2f855a"></span>Green — Execute</div>
+  </div>
+
+  <!-- OUTPUT -->
+  <div class="panel">
+    <div class="section-label">Output — pod state</div>
+    <div class="output-cells">
+      <div class="output-cell" id="cell-pod">
+        <div class="cell-label">POD</div>
+        <div class="cell-value" id="val-pod">—</div>
+      </div>
+      <div class="output-cell" id="cell-node">
+        <div class="cell-label">NODE</div>
+        <div class="cell-value" id="val-node">—</div>
+      </div>
+      <div class="output-cell" id="cell-sandbox">
+        <div class="cell-label">SANDBOX</div>
+        <div class="cell-value" id="val-sandbox">—</div>
+      </div>
+      <div class="output-cell" id="cell-container">
+        <div class="cell-label">CONTAINER</div>
+        <div class="cell-value" id="val-container">—</div>
+      </div>
+      <div class="output-cell" id="cell-ready">
+        <div class="cell-label">READY</div>
+        <div class="cell-value" id="val-ready">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- INPUT -->
+  <div class="panel input-panel" id="input-panel">
+    <div class="section-label input-label-row">
+      Input
+      <span class="info-wrap" tabindex="0">
+        <button class="info-icon" aria-label="Explain input notation">?</button>
+        <span class="tooltip">"Pod" names the Kubernetes object type being created. "nginx-pod" is the name given to this specific object. "image: nginx" is a field on the Pod's spec — not a function call — identifying which container image to run inside it.</span>
+      </span>
+    </div>
+    <div class="input-inner">
+      <div class="input-card">
+        <div class="input-value">Pod: nginx-pod (image: nginx)</div>
+        <div class="input-sub">read</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FLOW -->
+  <div class="panel">
+    <div class="section-label">Flow</div>
+    <div class="flow-columns">
+      <div class="flow-col">
+        <div class="flow-col-title">kubectl</div>
+        <div class="step-box type-compute" id="box-kubectl-1">
+          <div class="box-title">Send request</div>
+          <div class="box-value">?</div>
+        </div>
+      </div>
+      <div class="flow-col">
+        <div class="flow-col-title">api server</div>
+        <div class="step-box type-bind" id="box-apiserver-1">
+          <div class="box-title">Authn / authz</div>
+          <div class="box-value">?</div>
+          <div class="box-note">no output change</div>
+        </div>
+        <div class="step-box type-compute" id="box-apiserver-2">
+          <div class="box-title">Admission control</div>
+          <div class="box-value">?</div>
+        </div>
+      </div>
+      <div class="flow-col">
+        <div class="flow-col-title">etcd</div>
+        <div class="step-box type-write" id="box-etcd-1">
+          <div class="box-title">Persist object</div>
+          <div class="box-value">?</div>
+          <div class="box-note">↑ commits output</div>
+        </div>
+      </div>
+      <div class="flow-col">
+        <div class="flow-col-title">scheduler</div>
+        <div class="step-box type-lock" id="box-scheduler-1">
+          <div class="box-title">Watch for Pods</div>
+          <div class="box-value">?</div>
+        </div>
+        <div class="step-box type-compute" id="box-scheduler-2">
+          <div class="box-title">Filter & score nodes</div>
+          <div class="box-value">?</div>
+          <div class="chip-row">
+            <span class="chip">POD</span>
+            <span class="chip-link"></span>
+            <span class="chip muted">NODE?</span>
+          </div>
+        </div>
+        <div class="step-box type-bind" id="box-scheduler-3">
+          <div class="box-title">Bind to node</div>
+          <div class="box-value">?</div>
+          <div class="box-note">↑ commits output</div>
+          <div class="chip-row">
+            <span class="chip">POD</span>
+            <span class="chip-link solid"></span>
+            <span class="chip">NODE-2</span>
+          </div>
+        </div>
+      </div>
+      <div class="flow-col">
+        <div class="flow-col-title">kubelet</div>
+        <div class="step-box type-lock" id="box-kubelet-1">
+          <div class="box-title">Detect assignment</div>
+          <div class="box-value">?</div>
+        </div>
+        <div class="step-box type-allocate" id="box-kubelet-2">
+          <div class="box-title">Create sandbox</div>
+          <div class="box-value">?</div>
+        </div>
+        <div class="step-box type-write" id="box-kubelet-3">
+          <div class="box-title">Report status</div>
+          <div class="box-value">?</div>
+          <div class="box-note">no output change</div>
+        </div>
+      </div>
+      <div class="flow-col">
+        <div class="flow-col-title">runtime</div>
+        <div class="step-box type-allocate" id="box-runtime-1">
+          <div class="box-title">Pull & create</div>
+          <div class="box-value">?</div>
+        </div>
+        <div class="step-box type-execute" id="box-runtime-2">
+          <div class="box-title">Start process</div>
+          <div class="box-value">?</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="caption-row">
+    <span id="caption-text"></span>
+    <span class="info-wrap" tabindex="0">
+      <button class="info-icon" aria-label="More info about this step">?</button>
+      <span class="tooltip" id="tooltip-body"></span>
+    </span>
+  </div>
+
+  <div class="controls-row">
+    <button class="nav-btn" id="back-btn">Back</button>
+    <div class="dots" id="dots"></div>
+    <button class="nav-btn" id="next-btn">Next</button>
+    <div class="readout" id="readout"></div>
+  </div>
+
+  <p class="result-line">Kubernetes is a set of independent controllers that watch etcd through the API server and each react to their own slice of the desired state — no component ever commands another directly.</p>
+
+  <svg id="connector-svg"></svg>
+</div>
+
+<script>
+const STEPS = [
+  {
+    id: 1, type: 'read', boxId: null,
+    caption: 'User applies Pod manifest',
+    tooltip: 'kubectl is Kubernetes\' CLI client. "kubectl apply -f pod.yaml" reads a YAML manifest describing the desired state of a Pod (the smallest deployable unit in Kubernetes, usually one or more tightly coupled containers) and tells the cluster to make that state real.',
+    commits: []
+  },
+  {
+    id: 2, type: 'compute', boxId: 'box-kubectl-1', reveal: '→ POST /api/v1/…/pods',
+    caption: 'kubectl sends request to API server',
+    tooltip: 'kubectl converts the YAML into a JSON API object and sends it as an HTTPS request to the kube-apiserver, the single entry point for all reads and writes to the cluster\'s state.',
+    commits: []
+  },
+  {
+    id: 3, type: 'bind', boxId: 'box-apiserver-1', reveal: '→ authenticated, authorized',
+    caption: 'API server authenticates & authorizes',
+    tooltip: 'The API server first checks who is making the request (authentication) and whether they are allowed to create this kind of object in this namespace (authorization), typically via RBAC — Role-Based Access Control.',
+    commits: []
+  },
+  {
+    id: 4, type: 'compute', boxId: 'box-apiserver-2', reveal: '→ defaults applied',
+    caption: 'Admission controllers validate object',
+    tooltip: 'Before saving anything, admission controllers — plugins that run inside the API server — get a chance to mutate the object (e.g. inject default values) or reject it outright if it violates policy.',
+    commits: []
+  },
+  {
+    id: 5, type: 'write', boxId: 'box-etcd-1', reveal: '→ stored, phase=Pending',
+    caption: 'Pod object written to etcd',
+    tooltip: 'The API server persists the validated Pod object into etcd, a distributed key-value store that is the cluster\'s single source of truth. At this point the Pod exists with phase=Pending but has not been assigned to any machine.',
+    commits: [{cell: 'pod', value: 'Pending'}]
+  },
+  {
+    id: 6, type: 'lock', boxId: 'box-scheduler-1', reveal: '→ unscheduled Pod seen',
+    caption: 'Scheduler watches for unscheduled Pods',
+    tooltip: 'The scheduler is a separate control-plane component that continuously watches the API server (a long-lived connection, not polling) for Pods that exist but have no node assigned.',
+    commits: []
+  },
+  {
+    id: 7, type: 'compute', boxId: 'box-scheduler-2', reveal: '→ node-2 scores highest',
+    caption: 'Scheduler filters & scores nodes',
+    tooltip: 'The scheduler runs the new Pod through a pipeline of filters (which nodes even have enough CPU/memory?) and scoring functions (which of those is the best fit?) to rank every candidate node. No node has been chosen yet, which is why the link below is still dotted.',
+    commits: []
+  },
+  {
+    id: 8, type: 'bind', boxId: 'box-scheduler-3', reveal: '→ bound to node-2',
+    caption: 'Scheduler binds Pod to node',
+    tooltip: 'The scheduler does not move the Pod itself — it creates a Binding object linking the Pod to the winning node, which the API server writes back to etcd as spec.nodeName (a field on the Pod object, not a function call). This is the moment scheduling becomes final, shown as the link turning solid.',
+    commits: [{cell: 'node', value: 'node-2'}, {cell: 'pod', value: 'Scheduled'}]
+  },
+  {
+    id: 9, type: 'lock', boxId: 'box-kubelet-1', reveal: '→ assignment seen',
+    caption: 'Kubelet detects Pod assignment',
+    tooltip: 'kubelet is the agent that runs on every node. It also watches the API server, and reacts as soon as it sees a Pod bound to its own node.',
+    commits: []
+  },
+  {
+    id: 10, type: 'allocate', boxId: 'box-kubelet-2', reveal: '→ network namespace ready',
+    caption: 'Kubelet creates Pod sandbox',
+    tooltip: 'Before starting any containers, kubelet asks the container runtime — via the CRI, the Container Runtime Interface — to create a Pod sandbox: typically a lightweight "pause" container that owns a network namespace shared by every container in the Pod.',
+    commits: [{cell: 'sandbox', value: 'created'}]
+  },
+  {
+    id: 11, type: 'allocate', boxId: 'box-runtime-1', reveal: '→ image pulled, container built',
+    caption: 'Runtime pulls image, creates container',
+    tooltip: 'The runtime (e.g. containerd) pulls the container image if it is not already cached locally, then prepares the container filesystem — the same layered-image mechanism used by plain Docker, just driven by kubelet instead of the docker CLI.',
+    commits: [{cell: 'container', value: 'created'}]
+  },
+  {
+    id: 12, type: 'execute', boxId: 'box-runtime-2', reveal: '→ process started',
+    caption: 'Runtime starts container process',
+    tooltip: 'The runtime execs the container\'s main process inside the sandbox\'s namespaces. This is the moment the workload is actually running, not just prepared.',
+    commits: [{cell: 'container', value: 'running'}, {cell: 'pod', value: 'Running'}, {cell: 'ready', value: '1/1'}]
+  },
+  {
+    id: 13, type: 'write', boxId: 'box-kubelet-3', reveal: '→ status: Running reported',
+    caption: 'Kubelet reports status to API server',
+    tooltip: 'kubelet reports the Pod\'s real status back to the API server, which writes it to etcd. This closes the loop: the desired state you applied in step 1 now matches the observed state of the cluster.',
+    commits: []
+  }
+];
+
+const CONNECTORS = [
+  { id: 'c1', from: 'box-etcd-1', to: 'box-scheduler-1', label: 'watch reacts to the write', activateAt: 6 },
+  { id: 'c2', from: 'box-scheduler-3', to: 'box-kubelet-1', label: 'watch reacts to the bind', activateAt: 9 },
+  { id: 'c3', from: 'input-panel', to: 'box-kubelet-3', label: 'desired state achieved', activateAt: 13 }
+];
+
+let current = 1;
+const total = STEPS.length;
+
+const captionText = document.getElementById('caption-text');
+const tooltipBody = document.getElementById('tooltip-body');
+const backBtn = document.getElementById('back-btn');
+const nextBtn = document.getElementById('next-btn');
+const readout = document.getElementById('readout');
+const dotsContainer = document.getElementById('dots');
+const inputPanel = document.getElementById('input-panel');
+
+STEPS.forEach((s, i) => {
+  const dot = document.createElement('button');
+  dot.className = 'dot';
+  dot.setAttribute('aria-label', 'Go to step ' + (i + 1));
+  dot.addEventListener('click', () => { current = i + 1; render(); });
+  dotsContainer.appendChild(dot);
+});
+const dotEls = Array.from(dotsContainer.children);
+
+backBtn.addEventListener('click', () => { if (current > 1) { current--; render(); } });
+nextBtn.addEventListener('click', () => { if (current < total) { current++; render(); } });
+window.addEventListener('resize', () => { sizeSvg(); drawConnectors(); });
+
+function sizeSvg() {
+  const widget = document.querySelector('.widget');
+  const svg = document.getElementById('connector-svg');
+  svg.setAttribute('width', widget.scrollWidth);
+  svg.setAttribute('height', widget.scrollHeight);
+  svg.style.width = widget.scrollWidth + 'px';
+  svg.style.height = widget.scrollHeight + 'px';
+}
+
+function render() {
+  const step = STEPS[current - 1];
+
+  captionText.textContent = step.caption;
+  tooltipBody.textContent = step.tooltip;
+
+  backBtn.disabled = current === 1;
+  nextBtn.disabled = current === total;
+  readout.textContent = 'Step ' + current + ' / ' + total;
+
+  dotEls.forEach((d, i) => {
+    const s = STEPS[i];
+    d.className = 'dot';
+    if (i + 1 < current) d.classList.add('type-' + s.type);
+    else if (i + 1 === current) { d.classList.add('type-' + s.type); d.classList.add('current'); }
+  });
+
+  inputPanel.classList.toggle('active-read', current === 1);
+
+  STEPS.forEach(s => {
+    if (!s.boxId) return;
+    const box = document.getElementById(s.boxId);
+    const valEl = box.querySelector('.box-value');
+    if (s.id <= current) {
+      box.classList.add('revealed');
+      valEl.textContent = s.reveal;
+    } else {
+      box.classList.remove('revealed');
+      valEl.textContent = '?';
+    }
+    box.classList.toggle('active', s.id === current);
+  });
+
+  const cellState = { pod: '—', node: '—', sandbox: '—', container: '—', ready: '—' };
+  const cellType = {};
+  STEPS.forEach(s => {
+    if (s.id <= current) {
+      (s.commits || []).forEach(c => { cellState[c.cell] = c.value; cellType[c.cell] = s.type; });
+    }
+  });
+  Object.keys(cellState).forEach(key => {
+    document.getElementById('val-' + key).textContent = cellState[key];
+    const cellEl = document.getElementById('cell-' + key);
+    cellEl.className = 'output-cell';
+    if (cellType[key]) cellEl.classList.add('type-' + cellType[key]);
+  });
+
+  (step.commits || []).forEach(c => {
+    const cellEl = document.getElementById('cell-' + c.cell);
+    cellEl.classList.remove('flash');
+    void cellEl.offsetWidth;
+    cellEl.classList.add('flash');
+  });
+
+  sizeSvg();
+  drawConnectors();
+}
+
+function wrapLabel(label) {
+  const words = label.split(' ');
+  const lines = [];
+  let cur = '';
+  words.forEach(w => {
+    if ((cur + ' ' + w).trim().length > 25) { lines.push(cur.trim()); cur = w; }
+    else cur += ' ' + w;
+  });
+  if (cur.trim()) lines.push(cur.trim());
+  return lines;
+}
+
+function drawConnectors() {
+  const svg = document.getElementById('connector-svg');
+  svg.innerHTML = '';
+  const widget = document.querySelector('.widget').getBoundingClientRect();
+  const active = CONNECTORS.filter(c => c.activateAt <= current)
+    .sort((a, b) => b.activateAt - a.activateAt);
+
+  active.forEach((c, i) => {
+    const opacity = i === 0 ? 1 : (i === 1 ? 0.5 : 0.25);
+    const fromEl = document.getElementById(c.from);
+    const toEl = document.getElementById(c.to);
+    if (!fromEl || !toEl) return;
+    const fr = fromEl.getBoundingClientRect();
+    const tr = toEl.getBoundingClientRect();
+    const x1 = fr.left + fr.width / 2 - widget.left;
+    const y1 = fr.top + fr.height / 2 - widget.top;
+    const x2 = tr.left + tr.width / 2 - widget.left;
+    const y2 = tr.top + tr.height / 2 - widget.top;
+
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+    line.setAttribute('stroke', '#6b7280');
+    line.setAttribute('stroke-width', '1.3');
+    line.setAttribute('stroke-dasharray', '3 3');
+    line.style.opacity = opacity;
+    svg.appendChild(line);
+
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    const lines = wrapLabel(c.label);
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', mx);
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('font-family', "'SF Mono', Menlo, Consolas, monospace");
+    text.setAttribute('font-size', '9.5');
+    text.setAttribute('fill', '#444444');
+    text.style.opacity = opacity;
+    lines.forEach((ln, li) => {
+      const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan');
+      tspan.setAttribute('x', mx);
+      tspan.setAttribute('y', my + li * 11 - (lines.length - 1) * 5.5);
+      tspan.textContent = ln;
+      text.appendChild(tspan);
+    });
+    svg.appendChild(text);
+
+    const bbox = text.getBBox();
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', bbox.x - 4);
+    rect.setAttribute('y', bbox.y - 2);
+    rect.setAttribute('width', bbox.width + 8);
+    rect.setAttribute('height', bbox.height + 4);
+    rect.setAttribute('rx', '3');
+    rect.setAttribute('fill', '#f7f8fa');
+    rect.setAttribute('stroke', '#e5e7eb');
+    rect.style.opacity = opacity;
+    svg.insertBefore(rect, text);
+  });
+}
+
+render();
+</script>
+
+</body>
+</html>

@@ -2,10 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>StepViz — Serialization &amp; Deserialization</title>
+<title>Serialization &amp; Deserialization</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
     --page-bg:#ffffff;
@@ -24,6 +22,7 @@
     --val-num:#0969da;
     --val-str:#c2410c;
     --val-bool:#8250df;
+    --btn-border:#bbb;
 
     --blue:#2b6cb0;   --blue-dim: rgba(43,108,176,.08);   --blue-dim2: rgba(43,108,176,.16);
     --gray:#718096;   --gray-dim: rgba(113,128,150,.08);  --gray-dim2: rgba(113,128,150,.16);
@@ -31,30 +30,24 @@
   }
   *{ box-sizing:border-box; }
   body{
-    margin:0; background:var(--page-bg); color:var(--text-body-2);
-    font-family:'Inter',system-ui,sans-serif; padding:28px 16px 48px;
-    display:flex; justify-content:center;
+    font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    max-width:680px; margin:32px auto; padding:0 16px 40px;
+    color:var(--text-body-2); background:var(--page-bg);
   }
-  .wrap{ width:100%; max-width:760px; }
-  .mono{ font-family:'JetBrains Mono',monospace; }
+  .mono{ font-family:"SF Mono", Menlo, Consolas, monospace; }
 
   header{ margin-bottom:16px; }
-  .eyebrow{
-    font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:.12em;
-    color:var(--label-section); text-transform:uppercase; margin:0 0 6px;
-  }
-  h1{ font-size:21px; margin:0 0 4px; font-weight:700; color:var(--text-strong); letter-spacing:-.01em; }
-  .variant-note{ font-size:13px; color:var(--label-muted); margin:0; }
-  .variant-note code{ font-family:'JetBrains Mono',monospace; background:var(--panel-surface); border:1px solid var(--panel-border); padding:1px 5px; border-radius:4px; }
+  h1{ font-size:20px; margin:0 0 4px; font-weight:600; color:var(--text-strong); }
+  p.sub{ font-size:14px; color:var(--label-muted); margin:0; }
 
   /* legend pill */
   .legend{
-    display:flex; flex-wrap:wrap; gap:14px; margin:16px 0 20px;
+    display:flex; flex-wrap:wrap; gap:22px; margin:16px 0 20px;
     background:var(--panel-surface); border:1px solid var(--panel-border); border-radius:12px;
-    padding:9px 14px;
+    padding:12px 18px;
   }
-  .legend-item{ display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--text-body); }
-  .swatch{ width:10px; height:10px; border-radius:3px; display:inline-block; flex:none; }
+  .legend-item{ display:flex; align-items:center; gap:7px; font-size:13px; color:var(--text-body); }
+  .swatch{ width:9px; height:9px; border-radius:3px; display:inline-block; flex:none; }
   .swatch.blue{ background:var(--blue);} .swatch.gray{ background:var(--gray);} .swatch.red{ background:var(--red);}
 
   /* shared panel chrome */
@@ -65,60 +58,65 @@
     padding:14px 16px 16px; margin-bottom:14px; position:relative; transition:border-color .35s ease, background .35s ease;
   }
   .section-label{
-    font-family:'JetBrains Mono',monospace; font-size:10.5px; letter-spacing:.09em; text-transform:uppercase;
-    color:var(--label-section); margin-bottom:10px;
+    font-family:"SF Mono", Menlo, Consolas, monospace; font-size:11px; font-weight:600; letter-spacing:.06em;
+    color:var(--label-section-2); text-transform:uppercase; margin:4px 0 8px;
   }
+  .input-label-row{ display:flex; align-items:center; gap:6px; margin:4px 0 8px; }
+  .input-label-row .section-label{ margin:0; }
 
   /* output panel */
-  #output-panel.tint-red{ border-color: rgba(197,48,48,.45); background: linear-gradient(var(--red-dim), var(--red-dim)), var(--panel-surface); }
-  #output-panel.flash{ animation: pulseRed .7s ease; }
-  @keyframes pulseRed{ 0%{ box-shadow:0 0 0 0 rgba(197,48,48,.35);} 100%{ box-shadow:0 0 0 10px rgba(197,48,48,0);} }
+  #output-panel.tint{
+    border-color: color-mix(in srgb, var(--out-color, var(--red)) 45%, var(--panel-border));
+    background: color-mix(in srgb, var(--out-color, var(--red)) 8%, var(--panel-surface));
+  }
   .out-row{ display:flex; gap:10px; justify-content:center; }
   .out-cell{
     background:var(--card-surface); border:1.5px solid var(--card-border); border-radius:10px;
     padding:9px 14px; min-width:78px; text-align:center; transition:border-color .3s ease;
   }
-  .out-cell.lit{ border-color: var(--red); }
-  .cell-key{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--label-muted); text-transform:uppercase; margin-bottom:4px; }
-  .cell-val{ font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:600; color:var(--placeholder); }
+  .out-cell.lit{ border-color: var(--out-color, var(--red)); }
+  .out-cell.flash{ animation: pulseFlash .7s ease; }
+  @keyframes pulseFlash{
+    0%{ box-shadow:0 0 0 0 color-mix(in srgb, var(--out-color, var(--red)) 45%, transparent); }
+    100%{ box-shadow:0 0 0 10px color-mix(in srgb, var(--out-color, var(--red)) 0%, transparent); }
+  }
+  .cell-key{ font-family:"SF Mono", Menlo, Consolas, monospace; font-size:10px; color:var(--label-muted); text-transform:uppercase; margin-bottom:4px; }
+  .cell-val{ font-family:"SF Mono", Menlo, Consolas, monospace; font-size:14px; font-weight:600; color:var(--placeholder); }
   .cell-val.v-num{ color:var(--val-num); } .cell-val.v-str{ color:var(--val-str); } .cell-val.v-bool{ color:var(--val-bool); }
 
   /* input panel */
-  #input-panel{
-    background:var(--blue-dim); border-color: rgba(43,108,176,.35);
-  }
+  #input-panel{ background:var(--blue-dim); border-color: rgba(43,108,176,.35); }
   #input-panel .section-label{ color:var(--blue); }
   #input-panel.active-read{ border-color:var(--blue); box-shadow:0 0 0 3px var(--blue-dim2); }
-  .in-value{
-    text-align:center; padding:6px 4px 2px;
-  }
-  .in-value .v-main{ font-family:'JetBrains Mono',monospace; font-size:14.5px; font-weight:600; color:var(--text-strong); }
-  .in-value .v-sub{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--blue); text-transform:uppercase; letter-spacing:.08em; margin-top:5px; }
+  .in-value{ text-align:center; padding:6px 4px 2px; }
+  .in-value .v-main{ font-family:"SF Mono", Menlo, Consolas, monospace; font-size:14.5px; font-weight:600; color:var(--text-strong); }
+  .in-value .v-sub{ font-family:"SF Mono", Menlo, Consolas, monospace; font-size:10px; color:var(--blue); text-transform:uppercase; letter-spacing:.08em; margin-top:5px; }
   .k{ color:var(--label-muted); }
 
   /* flow panel */
   .flow-actors{ display:flex; gap:14px; }
   .flow-actor{ flex:1; min-width:0; }
   .actor-title{
-    font-family:'JetBrains Mono',monospace; font-size:10.5px; font-weight:700; letter-spacing:.08em;
+    font-family:"SF Mono", Menlo, Consolas, monospace; font-size:10.5px; font-weight:700; letter-spacing:.08em;
     color:var(--label-section-2); text-transform:uppercase; text-align:center; margin-bottom:8px;
   }
   .flow-box{
     background:var(--card-surface); border:1.5px solid var(--card-border); border-left-width:4px;
     border-radius:9px; padding:8px 10px; margin-bottom:8px; transition:all .3s ease;
   }
-  .flow-box.compute{ border-left-color:var(--gray); }
-  .flow-box.write{ border-left-color:var(--red); }
-  .flow-box.active.compute{ border-color:var(--gray); background:var(--gray-dim2); }
-  .flow-box.active.write{ border-color:var(--red); background:var(--red-dim2); }
-  .flow-box-head{ display:flex; justify-content:space-between; align-items:baseline; gap:6px; font-family:'JetBrains Mono',monospace; font-size:11.5px; }
+  /* One definition point per operation type: each sets --step-color/--step-tint once;
+     a single generic .active rule (below) reads them, so nothing falls through unstyled. */
+  .flow-box.compute{ --step-color:var(--gray); --step-tint:var(--gray-dim2); border-left-color:var(--step-color); }
+  .flow-box.write{ --step-color:var(--red); --step-tint:var(--red-dim2); border-left-color:var(--step-color); }
+  .flow-box.active{ border-color:var(--step-color); background:var(--step-tint); box-shadow:0 0 0 1px var(--step-color) inset; }
+  .flow-box-head{ display:flex; justify-content:space-between; align-items:baseline; gap:6px; font-family:"SF Mono", Menlo, Consolas, monospace; font-size:11.5px; }
   .flow-box-title{ font-weight:600; color:var(--text-strong); }
   .flow-box-arrow{ color:var(--label-muted); font-size:10.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .flow-box-arrow .fv{ color:var(--text-strong); }
 
   .struct{ display:flex; align-items:center; gap:5px; margin-top:7px; }
   .chip{
-    font-family:'JetBrains Mono',monospace; font-size:9.5px; padding:3px 6px; border-radius:5px;
+    font-family:"SF Mono", Menlo, Consolas, monospace; font-size:9.5px; padding:3px 6px; border-radius:5px;
     background:var(--panel-surface); border:1px solid var(--card-border); color:var(--text-body);
     white-space:nowrap;
   }
@@ -127,53 +125,67 @@
     content:''; position:absolute; right:-1px; top:-4px; border:4px solid transparent;
     border-left-color:var(--placeholder); transition:border-left-color .3s ease;
   }
-  .link.solid{ border-top-style:solid; border-top-color:var(--gray); }
-  .link.solid::after{ border-left-color:var(--gray); }
-  .flow-box.write .link.solid{ border-top-color:var(--red); }
-  .flow-box.write .link.solid::after{ border-left-color:var(--red); }
+  /* Solid link derives its color from the same --step-color the box already set — no per-type override needed. */
+  .link.solid{ border-top-style:solid; border-top-color:var(--step-color); }
+  .link.solid::after{ border-left-color:var(--step-color); }
+
+  .commit-note{ font-family:"SF Mono", Menlo, Consolas, monospace; font-size:11px; text-align:center; margin-top:8px; }
+  .commit-note.is-commit{ color:var(--red); font-weight:600; }
+  .commit-note.is-none{ color:var(--label-muted); }
 
   /* caption row */
-  .caption-row{
-    display:flex; align-items:center; gap:10px;
-    background:var(--panel-surface); border:1px solid var(--panel-border); border-radius:10px; padding:12px 14px;
-    margin-top:2px;
-  }
-  .caption-text{ font-size:14px; font-weight:600; color:var(--text-body-2); flex:1; }
+  .caption-row{ display:flex; align-items:center; justify-content:center; gap:6px; margin:14px 0 4px; }
+  .caption-text{ font-size:14px; color:var(--text-body); }
   .info-btn{
-    position:relative; width:20px; height:20px; border-radius:50%; flex:none;
-    background:var(--card-surface); border:1px solid var(--card-border); color:var(--label-muted);
-    font-family:'JetBrains Mono',monospace; font-size:11px; cursor:help; line-height:1;
+    position:relative; width:17px; height:17px; border-radius:50%; flex:none; padding:0;
+    display:inline-flex; align-items:center; justify-content:center;
+    background:#f2f2f2; border:1px solid var(--btn-border); color:var(--label-muted);
+    font-family:"SF Mono", Menlo, Consolas, monospace; font-size:11px; cursor:help; line-height:1;
   }
   .info-btn:hover, .info-btn:focus-visible{ color:var(--text-strong); border-color:var(--label-muted); outline:none; }
   .tooltip{
-    display:none; position:absolute; right:0; bottom:calc(100% + 8px); width:260px;
-    background:var(--tooltip-bg); border-radius:8px; padding:10px 12px;
-    font-family:'Inter',sans-serif; font-size:12px; line-height:1.5; color:#ffffff; font-weight:400;
+    display:none; position:absolute; width:260px;
+    background:var(--tooltip-bg); border-radius:6px; padding:10px 12px;
+    font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size:12px; line-height:1.5; color:#ffffff; font-weight:400;
     text-align:left; z-index:20; box-shadow:0 8px 24px rgba(0,0,0,.25);
   }
+  .tooltip code{ font-family:"SF Mono", Menlo, Consolas, monospace; background:rgba(255,255,255,.12); padding:1px 3px; border-radius:3px; }
+  .tooltip::after{ content:''; position:absolute; border:5px solid transparent; }
+  /* per-step caption tooltip: opens above the icon, pointer at the bottom */
+  #info-btn .tooltip{ right:0; bottom:calc(100% + 8px); }
+  #info-btn .tooltip::after{ top:100%; right:6px; border-top-color:var(--tooltip-bg); }
+  /* input panel's own persistent tooltip: opens below the icon, pointer at the top */
+  #input-info-btn .tooltip{ left:0; top:calc(100% + 8px); }
+  #input-info-btn .tooltip::after{ bottom:100%; left:6px; border-bottom-color:var(--tooltip-bg); }
   .info-btn:hover .tooltip, .info-btn:focus-visible .tooltip{ display:block; }
 
   /* controls */
-  .controls{ margin-top:14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .controls{ margin-top:14px; display:flex; align-items:center; justify-content:center; gap:10px; position:relative; }
   .controls button{
-    font-family:'JetBrains Mono',monospace; font-size:12px; background:var(--card-surface);
-    border:1px solid var(--card-border); color:var(--text-strong); border-radius:8px; padding:8px 13px;
-    cursor:pointer; transition:border-color .2s ease;
+    font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size:14px; background:#fff; border:1px solid var(--btn-border); color:var(--text-strong);
+    border-radius:6px; padding:8px 16px; cursor:pointer; transition:border-color .2s ease;
   }
   .controls button:hover:not(:disabled){ border-color:var(--label-muted); }
-  .controls button:disabled{ opacity:.35; cursor:not-allowed; }
-  #btn-play{ min-width:80px; }
-  .progress{ font-family:'JetBrains Mono',monospace; font-size:11.5px; color:var(--label-muted); margin-left:auto; }
-  .dots{ display:flex; gap:6px; margin-left:8px; }
-  .dot{ width:8px; height:8px; border-radius:50%; border:1.5px solid var(--card-border); background:var(--card-surface); cursor:pointer; padding:0; }
-  .dot.current{ transform:scale(1.3); }
-  .dot[data-color="blue"].done{ background:var(--blue); border-color:var(--blue); }
-  .dot[data-color="gray"].done{ background:var(--gray); border-color:var(--gray); }
-  .dot[data-color="red"].done{ background:var(--red); border-color:var(--red); }
+  .controls button:disabled{ opacity:.4; cursor:default; }
+  .progress{ font-family:"SF Mono", Menlo, Consolas, monospace; font-size:12px; color:var(--label-muted); position:absolute; right:0; }
+  .dots{ display:flex; align-items:center; gap:9px; flex-wrap:wrap; max-width:220px; }
+  .dot{ width:10px; height:10px; border-radius:50%; border:none; padding:0; cursor:pointer; background:#ccc; }
+  .dot.current{ transform:scale(2); transform-origin:center; }
+  .dot[data-color="blue"].done{ background:var(--blue); }
+  .dot[data-color="gray"].done{ background:var(--gray); }
+  .dot[data-color="red"].done{ background:var(--red); }
+  .dot[data-color="amber"].done{ background:#b7791f; }
+  .dot[data-color="teal"].done{ background:#0891b2; }
+  .dot[data-color="indigo"].done{ background:#4c51bf; }
+  .dot[data-color="green"].done{ background:#2f855a; }
 
   .conn-path{ fill:none; stroke:var(--label-muted); stroke-width:1.3; stroke-dasharray:3 3; }
   .conn-halo{ fill:var(--panel-surface); stroke:var(--panel-border); stroke-width:1; }
-  .conn-label{ font-family:'JetBrains Mono',monospace; font-size:10px; fill:var(--text-body); }
+  .conn-label{ font-family:"SF Mono", Menlo, Consolas, monospace; font-size:10px; fill:var(--text-body); }
+
+  .result-line{ font-size:13px; color:var(--label-muted); text-align:center; margin-top:16px; }
 
   .summary{ margin-top:22px; font-size:13.5px; line-height:1.7; color:var(--text-body); border-top:1px solid var(--panel-border); padding-top:16px; }
   .summary strong{ color:var(--text-strong); }
@@ -183,17 +195,15 @@
 </style>
 </head>
 <body>
-<div class="wrap">
   <header>
-    <p class="eyebrow">StepViz · Data representation</p>
     <h1>Serialization &amp; Deserialization</h1>
-    <p class="variant-note">Variant shown: converting a single object to <code>JSON</code> and back — the most commonly taught form (vs. binary formats like Protobuf).</p>
+    <p class="sub">Converts an in-memory object into a portable JSON string and back into a brand-new object &mdash; the most commonly taught variant, shown here instead of a binary format like Protobuf.</p>
   </header>
 
   <div class="legend" aria-label="Color legend">
-    <div class="legend-item"><span class="swatch blue"></span>Blue — Read / input</div>
-    <div class="legend-item"><span class="swatch gray"></span>Gray — Compute / transform</div>
-    <div class="legend-item"><span class="swatch red"></span>Red — Write / critical outcome</div>
+    <div class="legend-item"><span class="swatch blue"></span>Blue &mdash; Read / input</div>
+    <div class="legend-item"><span class="swatch gray"></span>Gray &mdash; Compute / transform</div>
+    <div class="legend-item"><span class="swatch red"></span>Red &mdash; Write / critical outcome</div>
   </div>
 
   <div class="viz-root" id="viz-root">
@@ -202,14 +212,22 @@
     <div class="panel" id="output-panel">
       <div class="section-label">Output</div>
       <div class="out-row" id="out-row">
-        <div class="out-cell" data-f="id"><div class="cell-key">id</div><div class="cell-val">—</div></div>
-        <div class="out-cell" data-f="name"><div class="cell-key">name</div><div class="cell-val">—</div></div>
-        <div class="out-cell" data-f="active"><div class="cell-key">active</div><div class="cell-val">—</div></div>
+        <div class="out-cell" data-f="id"><div class="cell-key">id</div><div class="cell-val">&mdash;</div></div>
+        <div class="out-cell" data-f="name"><div class="cell-key">name</div><div class="cell-val">&mdash;</div></div>
+        <div class="out-cell" data-f="active"><div class="cell-key">active</div><div class="cell-val">&mdash;</div></div>
       </div>
     </div>
 
     <div class="panel" id="input-panel">
-      <div class="section-label">Input</div>
+      <div class="input-label-row">
+        <div class="section-label">Input</div>
+        <button class="info-btn" id="input-info-btn" aria-label="What does this input notation mean?" tabindex="0">
+          ?
+          <span class="tooltip" id="input-info-tooltip">
+            Two notations show up here as the steps play out. <code>{ id: 1, name: "Ana", active: true }</code> is an object literal &mdash; the in-memory form: each <code>key: value</code> pair is one field, quotes mark a string, a bare <code>true</code>/<code>false</code> is a boolean, and a bare digit is a number. <code>'{"id":1,"name":"Ana","active":true}'</code> is the same three fields flattened into one JSON string &mdash; the literal text that actually leaves the process as bytes. Note that in JSON, every key is quoted too, unlike the object-literal form.
+          </span>
+        </button>
+      </div>
       <div class="in-value">
         <div class="v-main mono" id="in-main"></div>
         <div class="v-sub" id="in-sub">read</div>
@@ -222,7 +240,7 @@
         <div class="flow-actor">
           <div class="actor-title">Serializer</div>
           <div class="flow-box compute" id="box-2" data-step="2">
-            <div class="flow-box-head"><span class="flow-box-title">Serialize</span><span class="flow-box-arrow">→ <span class="fv">?</span></span></div>
+            <div class="flow-box-head"><span class="flow-box-title">Serialize</span><span class="flow-box-arrow">&rarr; <span class="fv">?</span></span></div>
             <div class="struct">
               <span class="chip">Object</span>
               <span class="link" id="link-2"></span>
@@ -230,7 +248,7 @@
             </div>
           </div>
           <div class="flow-box write" id="box-3" data-step="3">
-            <div class="flow-box-head"><span class="flow-box-title">Write</span><span class="flow-box-arrow">→ <span class="fv">?</span></span></div>
+            <div class="flow-box-head"><span class="flow-box-title">Write</span><span class="flow-box-arrow">&rarr; <span class="fv">?</span></span></div>
             <div class="struct">
               <span class="chip">JSON</span>
               <span class="link" id="link-3"></span>
@@ -241,7 +259,7 @@
         <div class="flow-actor">
           <div class="actor-title">Deserializer</div>
           <div class="flow-box compute" id="box-5" data-step="5">
-            <div class="flow-box-head"><span class="flow-box-title">Deserialize</span><span class="flow-box-arrow">→ <span class="fv">?</span></span></div>
+            <div class="flow-box-head"><span class="flow-box-title">Deserialize</span><span class="flow-box-arrow">&rarr; <span class="fv">?</span></span></div>
             <div class="struct">
               <span class="chip">JSON</span>
               <span class="link" id="link-5"></span>
@@ -249,7 +267,7 @@
             </div>
           </div>
           <div class="flow-box write" id="box-6" data-step="6">
-            <div class="flow-box-head"><span class="flow-box-title">Write</span><span class="flow-box-arrow">→ <span class="fv">?</span></span></div>
+            <div class="flow-box-head"><span class="flow-box-title">Write</span><span class="flow-box-arrow">&rarr; <span class="fv">?</span></span></div>
             <div class="struct">
               <span class="chip">Values</span>
               <span class="link" id="link-6"></span>
@@ -268,53 +286,57 @@
       <span class="tooltip" id="tooltip-text"></span>
     </button>
   </div>
+  <div class="commit-note" id="step-note"></div>
 
   <div class="controls">
-    <button id="btn-prev">⏮ Prev</button>
-    <button id="btn-play">▶ Play</button>
-    <button id="btn-next">Next ⏭</button>
+    <button id="btn-prev">Back</button>
+    <button id="btn-next">Next</button>
     <div class="dots" id="dots"></div>
     <span class="progress" id="progress-text"></span>
   </div>
 
+  <p class="result-line">Result: serialization and deserialization produce two independent objects with identical field values &mdash; a copy, not a shared reference &mdash; which is exactly what lets data cross a network or survive being saved to disk.</p>
+
   <div class="summary" id="summary"></div>
-</div>
 
 <script>
 const objLiteral = (id, name, active) =>
   `{ <span class="k">id</span>: <span class="v-num">${id}</span>, <span class="k">name</span>: <span class="v-str">"${name}"</span>, <span class="k">active</span>: <span class="v-bool">${active}</span> }`;
 const jsonLiteral = `<span class="v-str">'{"id":1,"name":"Ana","active":true}'</span>`;
 
+// Steps 3 and 6 both commit (write color, red); step 7 is also red but is a settled/confirmation
+// step that changes nothing in Output. Since red is shared between committers and a non-committer,
+// each of those steps gets an explicit note per the spec's commit-ambiguity rule.
 const steps = [
-  { color:'blue', caption:'Read object\u2019s fields',
-    tooltip:'An object already lives in a program\u2019s memory — a User with three fields: id, name, active. The serializer walks each field and reads its current value. Reading is non-destructive; it just gathers what will be encoded.',
+  { color:'blue', caption:'Read object’s fields',
+    tooltip:'An object already lives in a program’s memory — a User with three fields: id, name, active. The serializer goes through each field and reads its current value. Reading is non-destructive; it just gathers what will be encoded.',
     input:{ main:objLiteral(1,'Ana','true'), activeRead:true }, flow:null, output:null },
 
   { color:'gray', caption:'Transform → JSON text',
     tooltip:'Serialize (verb): convert an in-memory object into a flat, portable format such as JSON, XML, or binary bytes. The three field values are combined into one JSON string. This is a compute step — no data has left the process yet.',
-    input:{ main:objLiteral(1,'Ana','true'), activeRead:false }, flow:{ box:2, value:jsonLiteral, link:'solid' }, output:null },
+    input:{ main:objLiteral(1,'Ana','true'), activeRead:false }, flow:{ box:2, value:'JSON text', link:'solid' }, output:null },
 
   { color:'red', caption:'Write JSON to storage',
-    tooltip:'The serialized text is written out — to a file, a database column, or a network socket. This is the critical outcome of serialization: the object\u2019s data now exists outside the original process, as plain bytes.',
+    tooltip:'The serialized text is written out — to a file, a database column, or a network socket. This is the critical outcome of serialization: the object’s data now exists outside the original process, as plain bytes.',
     input:{ main:jsonLiteral, activeRead:false }, flow:{ box:3, value:'written', link:'solid' },
-    output:{ id:'1', name:'"Ana"', active:'true', flash:true } },
+    output:{ id:'1', name:'"Ana"', active:'true' }, note:{ type:'commit', text:'↑ commits output' } },
 
   { color:'blue', caption:'Read JSON from storage',
-    tooltip:'On the receiving side — a different process, machine, or just a later moment — something reads those same bytes back in. This mirrors step 1: another read, just on the other end of the wire.',
+    tooltip:'On the receiving side — a different process, machine, or just a later moment — something reads those same bytes back in. This mirrors step 1: another read, just on the other end of the exchange.',
     input:{ main:jsonLiteral, activeRead:true }, flow:null, output:'keep' },
 
   { color:'gray', caption:'Parse → field values',
     tooltip:'Deserialize (verb): the reverse of serialize. The parser reads the JSON text structurally — keys, colons, commas — and recovers id, name, and active as separate typed values again.',
-    input:{ main:jsonLiteral, activeRead:false }, flow:{ box:5, value:objLiteral(1,'Ana','true'), link:'solid' }, output:'keep' },
+    input:{ main:jsonLiteral, activeRead:false }, flow:{ box:5, value:'fields', link:'solid' }, output:'keep' },
 
   { color:'red', caption:'Write values into new object',
-    tooltip:'The parsed values are written into a brand-new object the deserializing process just allocated. This is a write — it creates fresh memory, not a reuse of the original object\u2019s memory from step 1.',
+    tooltip:'The parsed values are written into a brand-new object the deserializing process just created. This is a write — it uses fresh memory, not the original object’s memory from step 1.',
     input:{ main:objLiteral(1,'Ana','true'), activeRead:false }, flow:{ box:6, value:'written', link:'solid' },
-    output:{ id:'1', name:'"Ana"', active:'true', flash:true } },
+    output:{ id:'1', name:'"Ana"', active:'true' }, note:{ type:'commit', text:'↑ commits output' } },
 
   { color:'red', caption:'New object in memory',
-    tooltip:'Deserialization is complete: a second, independent object now exists with the same field values as the original. It\u2019s a copy, not a reference — changing one object later will not affect the other.',
-    input:{ main:objLiteral(1,'Ana','true'), activeRead:false }, flow:null, output:'keep' },
+    tooltip:'Deserialization is complete: a second, independent object now exists with the same field values as the original. Changing one object later will not affect the other, because they are separate copies rather than two names for the same memory.',
+    input:{ main:objLiteral(1,'Ana','true'), activeRead:false }, flow:null, output:'keep', note:{ type:'none', text:'no output change' } },
 ];
 
 const connectors = [
@@ -323,25 +345,27 @@ const connectors = [
   { a:'#input-panel', b:'#output-panel', label:'same data, new object', revealAt:7, arc:'auto' },
 ];
 
+const colorHex = { blue:'#2b6cb0', gray:'#718096', red:'#c53030', amber:'#b7791f', teal:'#0891b2', indigo:'#4c51bf', green:'#2f855a' };
+
 // ---- refs ----
 const outputPanel = document.getElementById('output-panel');
 const inputPanel = document.getElementById('input-panel');
 const inMain = document.getElementById('in-main');
-const inSub = document.getElementById('in-sub');
 const flowBoxes = { 2:document.getElementById('box-2'), 3:document.getElementById('box-3'),
                      5:document.getElementById('box-5'), 6:document.getElementById('box-6') };
 const links = { 2:document.getElementById('link-2'), 3:document.getElementById('link-3'),
                  5:document.getElementById('link-5'), 6:document.getElementById('link-6') };
+const stepNoteEl = document.getElementById('step-note');
 
-let lastOutput = null; // remembers committed output values across 'keep' steps
+let lastOutput = null;      // remembers committed output values across 'keep' steps
+let lastOutputColor = null; // remembers which operation-type color last committed, for the tint/flash
 
-let current = 1, playing = false, timer = null;
+let current = 1;
 const captionEl = document.getElementById('caption-text');
 const tooltipEl = document.getElementById('tooltip-text');
 const progressEl = document.getElementById('progress-text');
 const btnPrev = document.getElementById('btn-prev');
 const btnNext = document.getElementById('btn-next');
-const btnPlay = document.getElementById('btn-play');
 
 // dots
 const dotsWrap = document.getElementById('dots');
@@ -350,7 +374,7 @@ steps.forEach((s,i)=>{
   const b=document.createElement('button');
   b.className='dot'; b.dataset.step=n; b.dataset.color=s.color;
   b.setAttribute('aria-label', `Step ${n}: ${s.caption}`);
-  b.addEventListener('click', ()=>{ pause(); goTo(n); });
+  b.addEventListener('click', ()=>{ goTo(n); });
   dotsWrap.appendChild(b);
 });
 const dotEls = [...dotsWrap.querySelectorAll('.dot')];
@@ -376,25 +400,38 @@ function render(){
     el.classList.remove('active');
     const fv = el.querySelector('.fv');
     if(current >= n){
-      // find the value this box committed when it was reached
       const owningStep = steps[n-1];
-      fv.textContent = owningStep.flow ? owningStep.flow.value.replace(/<[^>]+>/g,'').slice(0,18) : '?';
+      fv.textContent = owningStep.flow ? owningStep.flow.value : '?';
       links[n].classList.add('solid');
     } else {
       fv.textContent = '?';
       links[n].classList.remove('solid');
     }
   });
-  if(s.flow){ flowBoxes[s.flow.box].classList.add('active'); }
+  if(s.flow){
+    flowBoxes[s.flow.box].classList.add('active');
+  }
 
-  // output panel
-  if(s.output && s.output !== 'keep'){ lastOutput = s.output; }
-  outputPanel.classList.toggle('tint-red', !!lastOutput);
-  outputPanel.classList.remove('flash');
-  if(s.output && s.output !== 'keep'){ void outputPanel.offsetWidth; outputPanel.classList.add('flash'); }
+  // per-step commit-ambiguity note (only present on steps that need it)
+  if(s.note){
+    stepNoteEl.textContent = s.note.text;
+    stepNoteEl.className = 'commit-note ' + (s.note.type === 'commit' ? 'is-commit' : 'is-none');
+    stepNoteEl.style.display = 'block';
+  } else {
+    stepNoteEl.textContent = '';
+    stepNoteEl.style.display = 'none';
+  }
+
+  // output panel: only updates on an actual commit; a read/compute step leaves it showing prior state
+  const committingNow = !!(s.output && s.output !== 'keep');
+  if(committingNow){ lastOutput = s.output; lastOutputColor = s.color; }
+  if(lastOutputColor){ outputPanel.style.setProperty('--out-color', colorHex[lastOutputColor]); }
+  outputPanel.classList.toggle('tint', !!lastOutput);
+
   ['id','name','active'].forEach(f=>{
     const cell = outputPanel.querySelector(`.out-cell[data-f="${f}"] .cell-val`);
     const cellBox = outputPanel.querySelector(`.out-cell[data-f="${f}"]`);
+    cellBox.classList.remove('flash');
     if(lastOutput){
       cell.textContent = lastOutput[f];
       cell.className = 'cell-val ' + typeClass(lastOutput[f]);
@@ -403,6 +440,10 @@ function render(){
       cell.textContent = '—';
       cell.className = 'cell-val';
       cellBox.classList.remove('lit');
+    }
+    if(committingNow){
+      void cellBox.offsetWidth; // force reflow so the flash animation restarts on every commit
+      cellBox.classList.add('flash');
     }
   });
 
@@ -422,21 +463,14 @@ function render(){
 }
 
 function goTo(n){ current = Math.max(1, Math.min(steps.length, n)); render(); }
-function next(){ if(current>=steps.length){ pause(); return; } goTo(current+1); }
-function prev(){ goTo(current-1); }
-function play(){
-  if(current>=steps.length) goTo(1);
-  playing = true; btnPlay.textContent = '⏸ Pause';
-  timer = setInterval(()=>{ if(current>=steps.length){ pause(); return; } next(); }, 1700);
-}
-function pause(){ playing=false; btnPlay.textContent='▶ Play'; clearInterval(timer); }
+function next(){ if(current < steps.length) goTo(current+1); }
+function prev(){ if(current > 1) goTo(current-1); }
 
-btnPrev.addEventListener('click', ()=>{ pause(); prev(); });
-btnNext.addEventListener('click', ()=>{ pause(); next(); });
-btnPlay.addEventListener('click', ()=> playing ? pause() : play());
+btnPrev.addEventListener('click', prev);
+btnNext.addEventListener('click', next);
 document.addEventListener('keydown', e=>{
-  if(e.key==='ArrowRight'){ pause(); next(); }
-  if(e.key==='ArrowLeft'){ pause(); prev(); }
+  if(e.key==='ArrowRight') next();
+  if(e.key==='ArrowLeft') prev();
 });
 
 // ---- connectors: computed dynamically from real element positions ----

@@ -22,10 +22,27 @@
   }
   #list-status.error { color: #c53030; }
 
+  section.category {
+    margin-top: 28px;
+  }
+  section.category:first-of-type {
+    margin-top: 20px;
+  }
+  h2.category-title {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: #8a93a3;
+    margin: 0 0 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
   ul.widget-list {
     list-style: none;
     padding: 0;
-    margin: 20px 0 0;
+    margin: 0;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -66,7 +83,7 @@
 <p class="sub">Interactive step-through explainers for CS concepts.</p>
 
 <div id="list-status">Loading widget list&hellip;</div>
-<ul class="widget-list" id="widget-list"></ul>
+<div id="categories"></div>
 
 <footer id="footer-note"></footer>
 
@@ -75,11 +92,28 @@
   const OWNER  = "clarkesw";
   const REPO   = "Note_Widgets";
   const BRANCH = "main";
-  const PATH   = "";   // widgets live at repo root
   // -----------------------------------------------
 
+  // Category display order — mirrors the Evernote notebook order.
+  // Folder names in the repo should match these exactly.
+  const CATEGORY_ORDER = [
+    "AWS",
+    "DevOps",
+    "Java",
+    "Java - DSA",
+    "Java - Functional",
+    "Java - Threading",
+    "Messaging",
+    "Microservices",
+    "Persistence",
+    "Security",
+    "Spring",
+    "Testing"
+  ];
+  const UNCATEGORIZED = "Uncategorized";
+
   const statusEl = document.getElementById("list-status");
-  const listEl = document.getElementById("widget-list");
+  const categoriesEl = document.getElementById("categories");
   const footerEl = document.getElementById("footer-note");
 
   function titleFromFilename(name) {
@@ -89,6 +123,10 @@
       .replace(/\b\w/g, c => c.toUpperCase());
   }
 
+  function encodePath(path) {
+    return path.split("/").map(encodeURIComponent).join("/");
+  }
+
   async function loadWidgets() {
     if (OWNER.startsWith("YOUR-") || REPO.startsWith("YOUR-")) {
       statusEl.textContent = "Set OWNER and REPO at the top of the <script> tag in index.html, then reload.";
@@ -96,8 +134,8 @@
       return;
     }
 
-    const apiPath = PATH ? `${PATH}` : "";
-    const url = `https://api.github.com/repos/${OWNER}/${REPO}/contents/${apiPath}?ref=${BRANCH}`;
+    // Recursive tree API pulls every file across every folder in one call.
+    const url = `https://api.github.com/repos/${OWNER}/${REPO}/git/trees/${BRANCH}?recursive=1`;
 
     try {
       const res = await fetch(url, {
@@ -108,7 +146,7 @@
         if (res.status === 403) {
           statusEl.textContent = "GitHub API rate limit reached — try again in a bit.";
         } else if (res.status === 404) {
-          statusEl.textContent = `Couldn't find ${OWNER}/${REPO} (path "${PATH || "/"}", branch "${BRANCH}"). Check the config values.`;
+          statusEl.textContent = `Couldn't find ${OWNER}/${REPO} (branch "${BRANCH}"). Check the config values.`;
         } else {
           statusEl.textContent = `GitHub API error (${res.status}).`;
         }
@@ -116,35 +154,75 @@
         return;
       }
 
-      const entries = await res.json();
+      const data = await res.json();
+      const entries = data.tree || [];
 
       const widgets = entries
-        .filter(e => e.type === "file")
-        .filter(e => /\.html?$/i.test(e.name))
-        .filter(e => e.name.toLowerCase() !== "index.html")
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .filter(e => e.type === "blob")
+        .filter(e => /\.html?$/i.test(e.path))
+        .filter(e => e.path.toLowerCase() !== "index.html")
+        .map(e => {
+          const parts = e.path.split("/");
+          const filename = parts[parts.length - 1];
+          const category = parts.length > 1 ? parts[0] : UNCATEGORIZED;
+          return { path: e.path, filename, category };
+        });
 
       if (widgets.length === 0) {
-        statusEl.textContent = "No widgets found in this directory yet.";
+        statusEl.textContent = "No widgets found in this repo yet.";
         return;
       }
 
       statusEl.remove();
 
+      // Group by category
+      const byCategory = new Map();
       widgets.forEach(w => {
-        const li = document.createElement("li");
-        const a = document.createElement("a");
-        a.href = w.name;
-        a.textContent = titleFromFilename(w.name);
-        const filename = document.createElement("span");
-        filename.className = "filename";
-        filename.textContent = w.name;
-        li.appendChild(a);
-        li.appendChild(filename);
-        listEl.appendChild(li);
+        if (!byCategory.has(w.category)) byCategory.set(w.category, []);
+        byCategory.get(w.category).push(w);
       });
 
-      footerEl.textContent = `${widgets.length} widget${widgets.length === 1 ? "" : "s"} · refreshed on load from ${OWNER}/${REPO}`;
+      // Order: known categories in CATEGORY_ORDER first (only if non-empty),
+      // then any other folder names alphabetically, then Uncategorized last.
+      const knownPresent = CATEGORY_ORDER.filter(c => byCategory.has(c));
+      const extraFolders = [...byCategory.keys()]
+        .filter(c => c !== UNCATEGORIZED && !CATEGORY_ORDER.includes(c))
+        .sort((a, b) => a.localeCompare(b));
+      const orderedCategories = [...knownPresent, ...extraFolders];
+      if (byCategory.has(UNCATEGORIZED)) orderedCategories.push(UNCATEGORIZED);
+
+      orderedCategories.forEach(category => {
+        const items = byCategory.get(category).sort((a, b) => a.filename.localeCompare(b.filename));
+
+        const section = document.createElement("section");
+        section.className = "category";
+
+        const h2 = document.createElement("h2");
+        h2.className = "category-title";
+        h2.textContent = category;
+        section.appendChild(h2);
+
+        const ul = document.createElement("ul");
+        ul.className = "widget-list";
+
+        items.forEach(w => {
+          const li = document.createElement("li");
+          const a = document.createElement("a");
+          a.href = encodePath(w.path);
+          a.textContent = titleFromFilename(w.filename);
+          const filename = document.createElement("span");
+          filename.className = "filename";
+          filename.textContent = w.path;
+          li.appendChild(a);
+          li.appendChild(filename);
+          ul.appendChild(li);
+        });
+
+        section.appendChild(ul);
+        categoriesEl.appendChild(section);
+      });
+
+      footerEl.textContent = `${widgets.length} widget${widgets.length === 1 ? "" : "s"} across ${orderedCategories.length} ${orderedCategories.length === 1 ? "category" : "categories"} · refreshed on load from ${OWNER}/${REPO}`;
 
     } catch (err) {
       statusEl.textContent = "Couldn't reach the GitHub API. Check your connection and try again.";
