@@ -158,6 +158,16 @@
       const data = await res.json();
       const entries = data.tree || [];
 
+      console.log("[StepViz] EXCLUDED_FOLDERS config:", EXCLUDED_FOLDERS);
+      console.log("[StepViz] raw tree entries fetched:", entries.length);
+
+      const allHtmlPaths = entries
+        .filter(e => e.type === "blob")
+        .filter(e => /\.html?$/i.test(e.path))
+        .filter(e => e.path.toLowerCase() !== "index.html")
+        .map(e => e.path);
+      console.log("[StepViz] all .html paths (pre-exclusion):", allHtmlPaths);
+
       const widgets = entries
         .filter(e => e.type === "blob")
         .filter(e => /\.html?$/i.test(e.path))
@@ -168,7 +178,13 @@
           const category = parts.length > 1 ? parts[0] : UNCATEGORIZED;
           return { path: e.path, filename, category };
         })
-        .filter(w => !EXCLUDED_FOLDERS.some(f => f.toLowerCase() === w.category.toLowerCase()));
+        .filter(w => {
+          const isExcluded = EXCLUDED_FOLDERS.some(f => f.toLowerCase() === w.category.toLowerCase());
+          if (isExcluded) console.log(`[StepViz] EXCLUDING ${w.path} (category "${w.category}")`);
+          return !isExcluded;
+        });
+
+      console.log("[StepViz] widgets after exclusion filter:", widgets.map(w => w.path));
 
       if (widgets.length === 0) {
         statusEl.textContent = "No widgets found in this repo yet.";
